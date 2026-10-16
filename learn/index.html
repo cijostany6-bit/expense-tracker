@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Expense Tracker — how it was built, service by service</title>
+<link rel="stylesheet" href="site.css" />
+<script src="https://cdn.jsdelivr.net/npm/marked@15/marked.min.js" defer></script>
+</head>
+<body>
+
+<aside class="sidebar">
+  <a class="brand" href="#readme"><span class="logo">💸</span> Expense Tracker</a>
+  <p class="subtitle">how this project was built — service by service, so you can build the same thing yourself</p>
+  <nav id="nav"></nav>
+  <a class="back" href="../index.html">← open the live app</a>
+</aside>
+
+<main>
+  <article id="content"><p class="muted">Loading…</p></article>
+</main>
+
+<script>
+/* ── the reading list (order matters: overview → concepts → build log → ops) ── */
+const DOCS = [
+  { group: "Start here", items: [
+    { f: "readme.md",              t: "Project overview" },
+    { f: "capabilities.md",        t: "What this app can do" },
+    { f: "how-it-works.md",        t: "How one request flows" },
+    { f: "services-in-depth.md",   t: "AWS services, in depth" }
+  ]},
+  { group: "Build log (do it in this order)", items: [
+    { f: "step-1a-dynamodb.md",    t: "1a · DynamoDB data layer" },
+    { f: "step-1b-s3.md",          t: "1b · S3 private bucket" },
+    { f: "step-2-cognito.md",      t: "2 · Cognito sign-in" },
+    { f: "step-3-iam-lambda.md",   t: "3 · IAM + Lambda" },
+    { f: "step-4-api-gateway.md",  t: "4 · API Gateway JWT" },
+    { f: "step-5-frontend.md",     t: "5 · Frontend on S3" },
+    { f: "step-6-testing.md",      t: "6 · End-to-end testing" }
+  ]},
+  { group: "Operate & scale", items: [
+    { f: "production-readiness.md", t: "Production readiness" },
+    { f: "v3-blueprint.md",        t: "V3 · Textract pipeline" },
+    { f: "replicate-it.md",        t: "Build it yourself (checklist)" }
+  ]}
+];
+
+const slug = f => f.replace(/\.md$/, "");
+const esc  = s => String(s).replace(/[&<>]/g, c => ({ "&":"&amp;", "<":"&lt;", ">":"&gt;" }[c]));
+
+function buildNav() {
+  document.getElementById("nav").innerHTML = DOCS.map(g => `
+    <div class="group">
+      <p class="group-title">${esc(g.group)}</p>
+      ${g.items.map(i => `<a class="navlink" href="#${slug(i.f)}" data-f="${i.f}">${esc(i.t)}</a>`).join("")}
+    </div>`).join("");
+}
+
+async function load() {
+  const want  = (location.hash || "#readme").slice(1);
+  const all   = DOCS.flatMap(g => g.items);
+  const item  = all.find(i => slug(i.f) === want) || all[0];
+
+  document.querySelectorAll("#nav a.navlink").forEach(a =>
+    a.classList.toggle("active", a.dataset.f === item.f));
+
+  const el = document.getElementById("content");
+  el.innerHTML = '<p class="muted">Loading…</p>';
+
+  try {
+    const res = await fetch("content/" + item.f);
+    if (!res.ok) throw new Error("HTTP " + res.status);
+    const md = await res.text();
+
+    if (window.marked && typeof window.marked.parse === "function") {
+      el.innerHTML = window.marked.parse(md);
+    } else {
+      // CDN blocked / offline → still usable, just plain text
+      el.innerHTML = "<pre class='raw'>" + esc(md) + "</pre>";
+    }
+  } catch (e) {
+    el.innerHTML = "<p class='muted'>Could not load this page: " + esc(e.message) +
+                   "</p><p class='muted'>The raw markdown lives in the repo under <code>docs/</code>.</p>";
+  }
+}
+
+function init() {
+  buildNav();
+  load();
+  window.addEventListener("hashchange", load);
+}
+
+// deferred marked.min.js runs before DOMContentLoaded, so it is ready here
+if (document.readyState === "loading") {
+  document.addEventListener("DOMContentLoaded", init);
+} else {
+  init();
+}
+</script>
+</body>
+</html>

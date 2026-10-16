@@ -25,7 +25,16 @@
 *{box-sizing:border-box}
 html,body{height:100%}
 body{
-  margin:0;color:var(--ink);background:var(--bg);
+  margin:0;color:var(--ink);
+  /* vibrant "aurora" background: layered colour glows over a warm dark base */
+  background:
+    radial-gradient(1100px 760px at 8% 4%,  rgba(255, 20, 147, .42), transparent 62%),
+    radial-gradient(980px 700px at 94% 10%, rgba(255, 145, 0,  .38), transparent 62%),
+    radial-gradient(900px 900px at 86% 92%, rgba(0, 235, 200,  .32), transparent 62%),
+    radial-gradient(1040px 820px at 10% 96%, rgba(150, 60, 255, .42), transparent 62%),
+    radial-gradient(760px 620px at 52% 46%, rgba(255, 80, 200, .18),  transparent 68%),
+    linear-gradient(155deg, #1b0620 0%, #241040 36%, #101038 70%, #150a26 100%);
+  background-attachment:fixed;
   font-family:system-ui,-apple-system,"Segoe UI",Roboto,Inter,sans-serif;
   overflow-x:hidden;
 }
@@ -36,9 +45,11 @@ body{
   position:absolute;display:block;border-radius:50%;filter:blur(90px);opacity:.5;
   animation:float 22s ease-in-out infinite;
 }
-.orbs span:nth-child(1){width:520px;height:520px;background:#4f46e5;top:-160px;left:-120px}
-.orbs span:nth-child(2){width:420px;height:420px;background:#0ea5e9;bottom:-140px;right:-80px;animation-delay:-7s}
-.orbs span:nth-child(3){width:360px;height:360px;background:#db2777;top:40%;left:55%;animation-delay:-14s;opacity:.35}
+.orbs span:nth-child(1){width:560px;height:560px;background:#ff1493;top:-170px;left:-130px}
+.orbs span:nth-child(2){width:460px;height:460px;background:#ff9500;bottom:-150px;right:-90px;animation-delay:-7s}
+.orbs span:nth-child(3){width:400px;height:400px;background:#00e5c8;top:38%;left:58%;animation-delay:-14s;opacity:.34}
+.orbs span:nth-child(4){width:340px;height:340px;background:#8b5cf6;top:6%;left:44%;animation-delay:-4s;opacity:.42}
+.orbs span:nth-child(5){width:300px;height:300px;background:#c6ff00;bottom:5%;left:12%;animation-delay:-18s;opacity:.22}
 @keyframes float{
   0%,100%{transform:translate(0,0) scale(1)}
   50%{transform:translate(40px,-50px) scale(1.12)}

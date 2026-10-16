@@ -17,6 +17,7 @@ deeper.
 | Piece | URL |
 |---|---|
 | Web app | http://expense-tracker-web-896618135736.s3-website.eu-central-1.amazonaws.com |
+| **Learning site** (how this was built) | http://expense-tracker-web-896618135736.s3-website.eu-central-1.amazonaws.com/learn/ |
 | API | https://4haajttqgh.execute-api.eu-central-1.amazonaws.com |
 | Demo user | `demo.cijo@example.com` / `Testpass1` |
 
@@ -132,13 +133,21 @@ expense-tracker/
 │   └── autoconfirm.py            ← Cognito PreSignUp trigger
 ├── app/
 │   ├── index.html                ← page structure
-│   ├── styles.css                ← theme (colourful, animated, responsive)
+│   ├── styles.css                ← aurora theme (colourful, animated, responsive)
 │   ├── app.js                    ← auth + CRUD + filters + chart (vanilla JS)
 │   └── error.html
+├── scripts/
+│   └── loadtest.py               ← real load test: throughput, p50/p90/p99, errors
+├── learn/
+│   ├── index.html                ← the learning site (renders docs/*.md in the browser)
+│   └── site.css
 └── docs/
     ├── capabilities.md           ← what the app can do, mapped to services
     ├── how-it-works.md           ← every request traced hop by hop
     ├── services-in-depth.md      ← one deep-dive section per AWS service
+    ├── production-readiness.md   ← prod gap analysis + the load-test results
+    ├── v3-blueprint.md           ← V3: Textract OCR pipeline + expense history view
+    ├── replicate-it.md           ← "build this yourself" checklist
     ├── step-1a-dynamodb.md       ← the learning log (one doc per build step)
     ├── step-1b-s3.md
     ├── step-2-cognito.md
