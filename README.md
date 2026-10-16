@@ -5,8 +5,12 @@ upload receipts, and see a spend summary. Built *and understood* service by
 service: every step has a diagram, the decisions behind it, and drills to go
 deeper.
 
-> **Status:** ✅ **Phase 1 complete** (2026-10-16) · **Region:** `eu-central-1` (Frankfurt)
+> **Status:** ✅ **Complete + UI v2** (2026-10-16) · **Region:** `eu-central-1` (Frankfurt)
 > **Stack:** Cognito · API Gateway · Lambda · DynamoDB · S3 · IAM · CloudWatch
+>
+> **New here?** Start with [`docs/capabilities.md`](docs/capabilities.md) (what it
+> does), then [`docs/how-it-works.md`](docs/how-it-works.md) (how a request flows),
+> then [`docs/services-in-depth.md`](docs/services-in-depth.md) (the services).
 
 ## 🔗 Live
 
@@ -65,19 +69,39 @@ deeper.
 | 1b | **S3** | stores receipts (private, presigned URLs) | ✅ |
 | 2 | **Cognito** | sign-up / sign-in, issues JWTs | ✅ |
 | 3 | **IAM + Lambda** | CRUD + presign logic, least-privilege role | ✅ |
-| 4 | **API Gateway** | HTTP API + JWT authorizer, 5 routes | ✅ |
+| 4 | **API Gateway** | HTTP API + JWT authorizer, 7 routes | ✅ |
 | 5 | **S3 static** | hosts the frontend | ✅ |
 | 6 | **Testing** | end-to-end + security verification | ✅ |
+| 7 | **UI v2** | edit + receipt preview endpoints, colourful interactive frontend | ✅ |
 
-## 🔌 API
+## 🔌 API (all routes require a valid JWT)
 
 | Method | Path | Purpose | Auth |
 |---|---|---|---|
 | `GET` | `/expenses` | list the caller's expenses | JWT |
 | `POST` | `/expenses` | create an expense | JWT |
+| `PUT` | `/expenses/{id}` | update fields of an expense | JWT |
 | `DELETE` | `/expenses/{id}` | delete an expense | JWT |
-| `POST` | `/expenses/{id}/receipt-url` | presigned S3 PUT URL | JWT |
+| `POST` | `/expenses/{id}/receipt-url` | presigned S3 **upload** URL | JWT |
+| `GET` | `/expenses/{id}/receipt-url` | presigned S3 **preview** URL | JWT |
 | `GET` | `/summary` | totals grouped by category | JWT |
+
+## ✨ What it can do
+
+| Feature | Under the hood |
+|---|---|
+| Create account / sign in | Cognito (auto-confirm via PreSignUp Lambda) |
+| Add / edit / delete expenses | `POST` / `PUT` / `DELETE` → DynamoDB |
+| Coloured list, newest first | `GET /expenses` → DynamoDB **Query** by partition key |
+| Search · category filter · sort | client-side over the fetched list |
+| KPI dashboard (total · count · avg · top category) | derived from filtered data, animated |
+| Spend-by-category bar chart | `/summary` aggregation + live recompute |
+| Upload a receipt (≤5 MB) | presigned **PUT** straight to private S3 |
+| Preview a receipt image | presigned **GET** in a modal |
+| Export filtered list to CSV | client-side blob |
+| Keyboard shortcuts | `/` search · `Esc` close |
+
+Full capability list and honest "not built yet" table → **`docs/capabilities.md`**.
 
 ## 🧰 Services used — and *why this, not that*
 
@@ -107,10 +131,15 @@ expense-tracker/
 │   ├── handler.py                ← all API routes (Python 3.12)
 │   └── autoconfirm.py            ← Cognito PreSignUp trigger
 ├── app/
-│   ├── index.html                ← the whole frontend (vanilla JS)
+│   ├── index.html                ← page structure
+│   ├── styles.css                ← theme (colourful, animated, responsive)
+│   ├── app.js                    ← auth + CRUD + filters + chart (vanilla JS)
 │   └── error.html
-└── docs/                         ← the learning log (one doc per step)
-    ├── step-1a-dynamodb.md
+└── docs/
+    ├── capabilities.md           ← what the app can do, mapped to services
+    ├── how-it-works.md           ← every request traced hop by hop
+    ├── services-in-depth.md      ← one deep-dive section per AWS service
+    ├── step-1a-dynamodb.md       ← the learning log (one doc per build step)
     ├── step-1b-s3.md
     ├── step-2-cognito.md
     ├── step-3-iam-lambda.md
@@ -119,8 +148,11 @@ expense-tracker/
     └── step-6-testing.md
 ```
 
-Each step doc contains: what was created, a diagram, key concepts, the bug we
+Each **step** doc contains: what was created, a diagram, key concepts, the bug we
 hit, drills, **interview questions it unlocks**, and cost notes.
+
+The three **concept** docs (capabilities / how-it-works / services-in-depth) are
+the "explain it in an interview" layer on top of the build log.
 
 ## 🧭 Key decisions
 
@@ -146,7 +178,7 @@ aws dynamodb create-table --table-name expense-tracker-expenses \
 # 2. receipts bucket (private + CORS + AES256)   [see docs/step-1b-s3.md]
 # 3. cognito user pool + public app client + PreSignUp trigger  [docs/step-2-cognito.md]
 # 4. IAM role + policy, then deploy both Lambdas from backend/  [docs/step-3-iam-lambda.md]
-# 5. API Gateway HTTP API + JWT authorizer + 5 routes  [docs/step-4-api-gateway.md]
+# 5. API Gateway HTTP API + JWT authorizer + 7 routes  [docs/step-4-api-gateway.md]
 # 6. web bucket (public policy + website hosting) and upload app/  [docs/step-5-frontend.md]
 ```
 

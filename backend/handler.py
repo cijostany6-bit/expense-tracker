@@ -21,6 +21,7 @@ from decimal import Decimal
 
 import boto3
 from botocore.config import Config
+from botocore.exceptions import ClientError
 
 TABLE_NAME = os.environ["TABLE_NAME"]
 BUCKET_NAME = os.environ["BUCKET_NAME"]
@@ -147,6 +148,93 @@ def create_receipt_url(event):
     return _response(200, {"uploadUrl": url, "receiptKey": key})
 
 
+def update_expense(event):
+    """Update selected fields of an existing expense: PUT /expenses/{id}."""
+    user_id = _user_id(event)
+    expense_id = (event.get("pathParameters") or {}).get("id")
+    if not expense_id:
+        return _response(400, {"error": "missing expense id"})
+
+    try:
+        payload = json.loads(event.get("body") or "{}")
+    except json.JSONDecodeError:
+        return _response(400, {"error": "invalid JSON body"})
+
+    assignments, values = [], {}
+
+    if "amount" in payload:
+        try:
+            amount = Decimal(str(payload["amount"]))
+        except (ValueError, TypeError):
+            return _response(400, {"error": "'amount' must be a number"})
+        if amount <= 0:
+            return _response(400, {"error": "'amount' must be greater than 0"})
+        assignments.append("amount = :a")
+        values[":a"] = amount
+    if "currency" in payload:
+        assignments.append("currency = :cur")
+        values[":cur"] = (payload["currency"] or "EUR").upper()
+    if "category" in payload:
+        assignments.append("category = :cat")
+        values[":cat"] = (payload["category"] or "other").lower()
+    if "date" in payload:
+        # "DATE" is a DynamoDB reserved word -> must be aliased
+        assignments.append("#date = :d")
+        values[":d"] = payload["date"]
+    if "note" in payload:
+        assignments.append("note = :n")
+        values[":n"] = (payload["note"] or "").strip()
+
+    if not assignments:
+        return _response(400, {"error": "no updatable fields supplied"})
+
+    assignments.append("updatedAt = :u")
+    values[":u"] = _now()
+
+    kwargs = {
+        "Key": {"userId": user_id, "expenseId": expense_id},
+        "UpdateExpression": "SET " + ", ".join(assignments),
+        "ConditionExpression": "attribute_exists(expenseId)",
+        "ExpressionAttributeValues": values,
+        "ReturnValues": "ALL_NEW",
+    }
+    # DynamoDB rejects unused name aliases, so only pass it when #date is used.
+    # NOTE: `"#date" in assignments` would be list-membership (always False here),
+    # so match it as a substring of each statement instead.
+    if any("#date" in stmt for stmt in assignments):
+        kwargs["ExpressionAttributeNames"] = {"#date": "date"}
+
+    try:
+        result = table.update_item(**kwargs)
+    except table.meta.client.exceptions.ConditionalCheckFailedException:
+        return _response(404, {"error": "expense not found"})
+    return _response(200, result["Attributes"])
+
+
+def get_receipt_url(event):
+    """Presigned GET url so the browser can preview a receipt:
+    GET /expenses/{id}/receipt-url"""
+    user_id = _user_id(event)
+    expense_id = (event.get("pathParameters") or {}).get("id")
+    if not expense_id:
+        return _response(400, {"error": "missing expense id"})
+
+    key = f"receipts/{user_id}/{expense_id}"
+    try:
+        s3.head_object(Bucket=BUCKET_NAME, Key=key)  # does the object exist?
+    except ClientError as exc:
+        if exc.response.get("Error", {}).get("Code") in ("404", "NoSuchKey", "NotFound"):
+            return _response(404, {"error": "no receipt for this expense"})
+        raise
+
+    url = s3.generate_presigned_url(
+        "get_object",
+        Params={"Bucket": BUCKET_NAME, "Key": key},
+        ExpiresIn=300,
+    )
+    return _response(200, {"downloadUrl": url, "receiptKey": key})
+
+
 def summary(event):
     user_id = _user_id(event)
     result = table.query(
@@ -177,7 +265,9 @@ ROUTES = [
     ("GET", re.compile(r"^/expenses$"), list_expenses),
     ("POST", re.compile(r"^/expenses$"), create_expense),
     ("DELETE", re.compile(r"^/expenses/(?P<id>[^/]+)$"), delete_expense),
+    ("PUT", re.compile(r"^/expenses/(?P<id>[^/]+)$"), update_expense),
     ("POST", re.compile(r"^/expenses/(?P<id>[^/]+)/receipt-url$"), create_receipt_url),
+    ("GET", re.compile(r"^/expenses/(?P<id>[^/]+)/receipt-url$"), get_receipt_url),
     ("GET", re.compile(r"^/summary$"), summary),
 ]
 
