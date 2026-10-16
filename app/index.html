@@ -1,0 +1,269 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Expense Tracker</title>
+<style>
+  :root { --bg:#0f172a; --card:#1e293b; --line:#334155; --ink:#e2e8f0; --muted:#94a3b8; --accent:#38bdf8; --ok:#22c55e; --bad:#ef4444; }
+  * { box-sizing: border-box; }
+  body { margin:0; font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+         background:var(--bg); color:var(--ink); }
+  header { padding:18px 24px; border-bottom:1px solid var(--line); display:flex; justify-content:space-between; align-items:center; }
+  header h1 { font-size:18px; margin:0; }
+  .wrap { max-width:960px; margin:0 auto; padding:24px; display:grid; gap:18px; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:18px; }
+  .row { display:flex; gap:10px; flex-wrap:wrap; }
+  input, select, button { font:inherit; padding:9px 11px; border-radius:8px; border:1px solid var(--line);
+         background:#0b1220; color:var(--ink); }
+  input::placeholder { color:#64748b; }
+  button { background:var(--accent); color:#04121f; border:none; font-weight:600; cursor:pointer; }
+  button.ghost { background:transparent; color:var(--ink); border:1px solid var(--line); }
+  button.danger { background:transparent; color:var(--bad); border:1px solid var(--bad); }
+  table { width:100%; border-collapse:collapse; }
+  th, td { text-align:left; padding:8px 6px; border-bottom:1px solid var(--line); font-size:14px; }
+  th { color:var(--muted); font-weight:600; }
+  .muted { color:var(--muted); font-size:13px; }
+  .pill { display:inline-block; padding:2px 8px; border-radius:999px; background:#0b1220; border:1px solid var(--line); font-size:12px; }
+  #msg { min-height:20px; font-size:13px; }
+  .ok { color:var(--ok); } .bad { color:var(--bad); }
+  .hidden { display:none !important; }
+  .totals { display:flex; gap:12px; flex-wrap:wrap; }
+  .total { background:#0b1220; border:1px solid var(--line); border-radius:10px; padding:10px 14px; }
+  .total b { display:block; font-size:18px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>💸 Expense Tracker</h1>
+  <div class="row">
+    <span id="who" class="muted"></span>
+    <button id="logout" class="ghost hidden">Sign out</button>
+  </div>
+</header>
+
+<div class="wrap">
+
+  <!-- AUTH -->
+  <section id="authCard" class="card">
+    <h3 style="margin-top:0">Sign in or create an account</h3>
+    <div class="row">
+      <input id="email" type="email" placeholder="you@example.com" autocomplete="username" />
+      <input id="password" type="password" placeholder="Password (min 8 chars)" autocomplete="current-password" />
+      <button id="signin">Sign in</button>
+      <button id="signup" class="ghost">Sign up</button>
+    </div>
+    <p class="muted" style="margin-bottom:0">Accounts are handled by Amazon Cognito. Sign-up auto-confirms for this demo.</p>
+  </section>
+
+  <!-- APP -->
+  <section id="appCard" class="hidden">
+    <div class="card">
+      <h3 style="margin-top:0">Add an expense</h3>
+      <div class="row">
+        <input id="amount" type="number" step="0.01" min="0.01" placeholder="Amount" style="width:120px" />
+        <select id="currency">
+          <option>EUR</option><option>USD</option><option>INR</option><option>GBP</option>
+        </select>
+        <select id="category">
+          <option>food</option><option>travel</option><option>rent</option>
+          <option>utilities</option><option>health</option><option>other</option>
+        </select>
+        <input id="date" type="date" />
+        <input id="note" placeholder="Note (optional)" />
+        <button id="add">Add</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <h3 style="margin-top:0">Spend summary <span class="muted" id="grandTotal"></span></h3>
+      <div id="totals" class="totals"><span class="muted">No data yet.</span></div>
+    </div>
+
+    <div class="card">
+      <h3 style="margin-top:0">Your expenses <span class="muted" id="count"></span></h3>
+      <table>
+        <thead><tr><th>Date</th><th>Category</th><th>Note</th><th style="text-align:right">Amount</th><th>Receipt</th><th></th></tr></thead>
+        <tbody id="rows"><tr><td colspan="6" class="muted">Nothing yet.</td></tr></tbody>
+      </table>
+    </div>
+  </section>
+
+  <div id="msg"></div>
+</div>
+
+<script>
+// ---------------------------------------------------------------------------
+// Config — filled in when the stack was built
+// ---------------------------------------------------------------------------
+const REGION    = "eu-central-1";
+const CLIENT_ID = "4grucsnelng73rhl3c1kbasi7j";
+const API_BASE  = "https://4haajttqgh.execute-api.eu-central-1.amazonaws.com";
+
+const COGNITO   = `https://cognito-idp.${REGION}.amazonaws.com/`;
+const $ = (id) => document.getElementById(id);
+let idToken = null;
+
+function msg(text, cls) { const m = $("msg"); m.textContent = text || ""; m.className = cls || ""; }
+
+// ---------------------------------------------------------------------------
+// Cognito (direct API calls — no SDK needed)
+// ---------------------------------------------------------------------------
+async function cognito(target, body) {
+  const res = await fetch(COGNITO, {
+    method: "POST",
+    headers: { "Content-Type": "application/x-amz-json-1.1", "X-Amz-Target": `AWSCognitoIdentityProviderService.${target}` },
+    body: JSON.stringify(body),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.message || data.__type || `Cognito error (${res.status})`);
+  return data;
+}
+
+async function signUp(email, password) {
+  await cognito("SignUp", {
+    ClientId: CLIENT_ID, Username: email, Password: password,
+    UserAttributes: [{ Name: "email", Value: email }],
+  });
+}
+
+async function signIn(email, password) {
+  const data = await cognito("InitiateAuth", {
+    AuthFlow: "USER_PASSWORD_AUTH", ClientId: CLIENT_ID,
+    AuthParameters: { USERNAME: email, PASSWORD: password },
+  });
+  return data.AuthenticationResult.IdToken;
+}
+
+// ---------------------------------------------------------------------------
+// API helper
+// ---------------------------------------------------------------------------
+async function api(method, path, body) {
+  const res = await fetch(API_BASE + path, {
+    method,
+    headers: { "Authorization": idToken, "Content-Type": "application/json" },
+    body: body ? JSON.stringify(body) : undefined,
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || `API error ${res.status}`);
+  return data;
+}
+
+// ---------------------------------------------------------------------------
+// UI
+// ---------------------------------------------------------------------------
+function showApp() {
+  $("authCard").classList.add("hidden");
+  $("appCard").classList.remove("hidden");
+  $("logout").classList.remove("hidden");
+  refresh();
+}
+
+function showAuth() {
+  idToken = null;
+  $("authCard").classList.remove("hidden");
+  $("appCard").classList.add("hidden");
+  $("logout").classList.add("hidden");
+  $("who").textContent = "";
+  $("msg").textContent = "";
+}
+
+async function refresh() {
+  try {
+    const [list, summary] = await Promise.all([api("GET", "/expenses"), api("GET", "/summary")]);
+    renderRows(list.items);
+    renderTotals(summary);
+  } catch (e) { msg(e.message, "bad"); }
+}
+
+function renderRows(items) {
+  $("count").textContent = items.length ? `(${items.length})` : "";
+  const body = $("rows");
+  if (!items.length) { body.innerHTML = '<tr><td colspan="6" class="muted">Nothing yet.</td></tr>'; return; }
+  body.innerHTML = "";
+  for (const it of items) {
+    const tr = document.createElement("tr");
+    tr.innerHTML = `
+      <td>${it.date || ""}</td>
+      <td><span class="pill">${it.category || "other"}</span></td>
+      <td>${(it.note || "").replace(/</g, "&lt;")}</td>
+      <td style="text-align:right">${Number(it.amount).toFixed(2)} ${it.currency || ""}</td>
+      <td>${it.receiptKey ? "📎 attached" : '<input type="file" style="max-width:150px" />'}</td>
+      <td><button class="danger">×</button></td>`;
+    tr.querySelector("button.danger").onclick = async () => {
+      if (!confirm("Delete this expense?")) return;
+      try { await api("DELETE", `/expenses/${it.expenseId}`); await refresh(); }
+      catch (e) { msg(e.message, "bad"); }
+    };
+    const fileInput = tr.querySelector('input[type="file"]');
+    if (fileInput) fileInput.onchange = async () => {
+      const file = fileInput.files[0]; if (!file) return;
+      msg("Requesting upload URL...");
+      try {
+        const { uploadUrl } = await api("POST", `/expenses/${it.expenseId}/receipt-url`);
+        msg("Uploading receipt...");
+        const put = await fetch(uploadUrl, { method: "PUT", body: file });
+        if (!put.ok) throw new Error("Upload failed");
+        msg("Receipt uploaded ✔", "ok"); await refresh();
+      } catch (e) { msg(e.message, "bad"); }
+    };
+    body.appendChild(tr);
+  }
+}
+
+function renderTotals(s) {
+  const box = $("totals");
+  const entries = Object.entries(s.byCategory || {});
+  $("grandTotal").textContent = `— total ${Number(s.grandTotal || 0).toFixed(2)}`;
+  if (!entries.length) { box.innerHTML = '<span class="muted">No data yet.</span>'; return; }
+  box.innerHTML = entries.map(([k, v]) =>
+    `<div class="total"><span class="muted">${k}</span><b>${Number(v).toFixed(2)}</b></div>`).join("");
+}
+
+// ---------------------------------------------------------------------------
+// events
+// ---------------------------------------------------------------------------
+$("signup").onclick = async () => {
+  const email = $("email").value.trim(), password = $("password").value;
+  if (!email || !password) return msg("Enter an email and password.", "bad");
+  try {
+    msg("Creating account...");
+    await signUp(email, password);
+    msg("Account created — signing you in...", "ok");
+    idToken = await signIn(email, password);
+    $("who").textContent = email;
+    showApp(); msg("Signed in.", "ok");
+  } catch (e) { msg(e.message, "bad"); }
+};
+
+$("signin").onclick = async () => {
+  const email = $("email").value.trim(), password = $("password").value;
+  if (!email || !password) return msg("Enter an email and password.", "bad");
+  try {
+    msg("Signing in...");
+    idToken = await signIn(email, password);
+    $("who").textContent = email;
+    showApp(); msg("Signed in.", "ok");
+  } catch (e) { msg(e.message, "bad"); }
+};
+
+$("logout").onclick = showAuth;
+
+$("add").onclick = async () => {
+  const amount = parseFloat($("amount").value);
+  if (!amount || amount <= 0) return msg("Enter a valid amount.", "bad");
+  try {
+    await api("POST", "/expenses", {
+      amount, currency: $("currency").value, category: $("category").value,
+      date: $("date").value || undefined, note: $("note").value,
+    });
+    $("amount").value = ""; $("note").value = "";
+    msg("Expense added ✔", "ok"); await refresh();
+  } catch (e) { msg(e.message, "bad"); }
+};
+
+// default date = today
+$("date").value = new Date().toISOString().slice(0, 10);
+</script>
+</body>
+</html>
