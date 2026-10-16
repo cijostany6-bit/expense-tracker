@@ -1,0 +1,416 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: >
+  Expense Tracker — a serverless, multi-user expense tracker on AWS.
+  Cognito (auth) -> API Gateway HTTP API (JWT authorizer) -> Lambda (business
+  logic) -> DynamoDB (data) + S3 (receipts), with the frontend on S3 behind
+  CloudFront (HTTPS).
+
+  Package the Lambda code first, then deploy:
+    aws cloudformation package \
+      --template-file infra/template.yaml \
+      --s3-bucket <artifact-bucket> \
+      --output-template-file infra/packaged.yaml
+    aws cloudformation deploy \
+      --template-file infra/packaged.yaml \
+      --stack-name expense-tracker \
+      --capabilities CAPABILITY_IAM
+
+Parameters:
+  ProjectName:
+    Type: String
+    Default: expense-tracker
+    Description: Prefix used for resource names and the Project cost tag.
+
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      - Label:
+          default: Naming
+        Parameters:
+          - ProjectName
+
+Resources:
+  # ------------------------------------------------------------------------- #
+  # Data
+  # ------------------------------------------------------------------------- #
+  ExpensesTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub "${ProjectName}-expenses"
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: userId
+          AttributeType: S
+        - AttributeName: expenseId
+          AttributeType: S
+      KeySchema:
+        - AttributeName: userId
+          KeyType: HASH
+        - AttributeName: expenseId
+          KeyType: RANGE
+      SSESpecification:
+        SSEEnabled: true
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: false
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+
+  ReceiptsBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub "${ProjectName}-receipts-${AWS::AccountId}"
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      CorsConfiguration:
+        CorsRules:
+          - AllowedHeaders: ["*"]
+            AllowedMethods: [PUT, GET, HEAD]
+            AllowedOrigins: ["*"]
+            ExposedHeaders: [ETag]
+            MaxAge: 3000
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+
+  # ------------------------------------------------------------------------- #
+  # Frontend hosting (public S3 website, HTTPS via CloudFront below)
+  # ------------------------------------------------------------------------- #
+  WebBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub "${ProjectName}-web-${AWS::AccountId}"
+      WebsiteConfiguration:
+        IndexDocument: index.html
+        ErrorDocument: error.html
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: false
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: false
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+
+  WebBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref WebBucket
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: PublicRead
+            Effect: Allow
+            Principal: "*"
+            Action: s3:GetObject
+            Resource: !Sub "${WebBucket.Arn}/*"
+
+  # ------------------------------------------------------------------------- #
+  # Auth — Cognito user pool + public app client + PreSignUp auto-confirm
+  # ------------------------------------------------------------------------- #
+  UserPool:
+    Type: AWS::Cognito::UserPool
+    Properties:
+      UserPoolName: !Sub "${ProjectName}-user-pool"
+      UsernameAttributes: [email]
+      AutoVerifiedAttributes: [email]
+      MfaConfiguration: "OFF"
+      Policies:
+        PasswordPolicy:
+          MinimumLength: 8
+          RequireUppercase: true
+          RequireLowercase: true
+          RequireNumbers: true
+          RequireSymbols: false
+      LambdaConfig:
+        PreSignUp: !GetAtt AutoConfirmFunction.Arn
+
+  UserPoolClient:
+    Type: AWS::Cognito::UserPoolClient
+    Properties:
+      ClientName: !Sub "${ProjectName}-web"
+      UserPoolId: !Ref UserPool
+      GenerateSecret: false
+      ExplicitAuthFlows:
+        - ALLOW_USER_PASSWORD_AUTH
+        - ALLOW_USER_SRP_AUTH
+        - ALLOW_REFRESH_TOKEN_AUTH
+      RefreshTokenValidity: 30
+
+  # Cognito must be allowed to invoke the PreSignUp trigger.
+  AutoConfirmInvokePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref AutoConfirmFunction
+      Action: lambda:InvokeFunction
+      Principal: cognito-idp.amazonaws.com
+      SourceArn: !GetAtt UserPool.Arn
+
+  # ------------------------------------------------------------------------- #
+  # IAM — one least-privilege role shared by both functions
+  # ------------------------------------------------------------------------- #
+  LambdaExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub "${ProjectName}-lambda-role"
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: !Sub "${ProjectName}-lambda-policy"
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Sid: Logs
+                Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource: !Sub "arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:*"
+              - Sid: ExpensesTable
+                Effect: Allow
+                Action:
+                  - dynamodb:PutItem
+                  - dynamodb:GetItem
+                  - dynamodb:Query
+                  - dynamodb:UpdateItem
+                  - dynamodb:DeleteItem
+                Resource: !GetAtt ExpensesTable.Arn
+              - Sid: ReceiptsBucketObjects
+                Effect: Allow
+                Action:
+                  - s3:PutObject
+                  - s3:GetObject
+                Resource: !Sub "${ReceiptsBucket.Arn}/*"
+              - Sid: ReceiptsBucketListing
+                Effect: Allow
+                Action: s3:ListBucket
+                Resource: !GetAtt ReceiptsBucket.Arn
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+
+  # ------------------------------------------------------------------------- #
+  # Compute — API router + PreSignUp trigger
+  # ------------------------------------------------------------------------- #
+  ApiFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub "${ProjectName}-api"
+      Runtime: python3.12
+      Handler: handler.handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Timeout: 15
+      MemorySize: 128
+      Code: ../backend
+      Environment:
+        Variables:
+          TABLE_NAME: !Ref ExpensesTable
+          BUCKET_NAME: !Ref ReceiptsBucket
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+
+  AutoConfirmFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub "${ProjectName}-autoconfirm"
+      Runtime: python3.12
+      Handler: autoconfirm.handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Timeout: 3
+      MemorySize: 128
+      Code: ../backend
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+
+  # ------------------------------------------------------------------------- #
+  # API — one HTTP API, JWT authorizer, 7 routes, all AWS_PROXY to the router
+  # ------------------------------------------------------------------------- #
+  HttpApi:
+    Type: AWS::ApiGatewayV2::Api
+    Properties:
+      Name: !Sub "${ProjectName}-api"
+      ProtocolType: HTTP
+      CorsConfiguration:
+        AllowOrigins: ["*"]
+        AllowMethods: [GET, POST, PUT, DELETE, OPTIONS]
+        AllowHeaders: [authorization, content-type]
+        MaxAge: 3600
+      Tags:
+        Project: !Ref ProjectName
+
+  JwtAuthorizer:
+    Type: AWS::ApiGatewayV2::Authorizer
+    Properties:
+      ApiId: !Ref HttpApi
+      Name: cognito-jwt
+      AuthorizerType: JWT
+      IdentitySource:
+        - "$request.header.Authorization"
+      JwtConfiguration:
+        Audience:
+          - !Ref UserPoolClient
+        Issuer: !Sub "https://cognito-idp.${AWS::Region}.amazonaws.com/${UserPool}"
+
+  ApiIntegration:
+    Type: AWS::ApiGatewayV2::Integration
+    Properties:
+      ApiId: !Ref HttpApi
+      IntegrationType: AWS_PROXY
+      IntegrationUri: !GetAtt ApiFunction.Arn
+      PayloadFormatVersion: "2.0"
+
+  ApiInvokePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref ApiFunction
+      Action: lambda:InvokeFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub "arn:${AWS::Partition}:execute-api:${AWS::Region}:${AWS::AccountId}:${HttpApi}/*"
+
+  # $default stage with auto-deploy: routes go live as soon as they're created.
+  ApiStage:
+    Type: AWS::ApiGatewayV2::Stage
+    Properties:
+      ApiId: !Ref HttpApi
+      StageName: $default
+      AutoDeploy: true
+      Tags:
+        Project: !Ref ProjectName
+
+  RouteGetExpenses:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref HttpApi
+      RouteKey: "GET /expenses"
+      AuthorizationType: JWT
+      AuthorizerId: !Ref JwtAuthorizer
+      Target: !Sub "integrations/${ApiIntegration}"
+
+  RoutePostExpenses:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref HttpApi
+      RouteKey: "POST /expenses"
+      AuthorizationType: JWT
+      AuthorizerId: !Ref JwtAuthorizer
+      Target: !Sub "integrations/${ApiIntegration}"
+
+  RoutePutExpense:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref HttpApi
+      RouteKey: "PUT /expenses/{id}"
+      AuthorizationType: JWT
+      AuthorizerId: !Ref JwtAuthorizer
+      Target: !Sub "integrations/${ApiIntegration}"
+
+  RouteDeleteExpense:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref HttpApi
+      RouteKey: "DELETE /expenses/{id}"
+      AuthorizationType: JWT
+      AuthorizerId: !Ref JwtAuthorizer
+      Target: !Sub "integrations/${ApiIntegration}"
+
+  RoutePostReceiptUrl:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref HttpApi
+      RouteKey: "POST /expenses/{id}/receipt-url"
+      AuthorizationType: JWT
+      AuthorizerId: !Ref JwtAuthorizer
+      Target: !Sub "integrations/${ApiIntegration}"
+
+  RouteGetReceiptUrl:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref HttpApi
+      RouteKey: "GET /expenses/{id}/receipt-url"
+      AuthorizationType: JWT
+      AuthorizerId: !Ref JwtAuthorizer
+      Target: !Sub "integrations/${ApiIntegration}"
+
+  RouteGetSummary:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref HttpApi
+      RouteKey: "GET /summary"
+      AuthorizationType: JWT
+      AuthorizerId: !Ref JwtAuthorizer
+      Target: !Sub "integrations/${ApiIntegration}"
+
+  # ------------------------------------------------------------------------- #
+  # Front door — CloudFront gives the S3 website an HTTPS endpoint
+  # ------------------------------------------------------------------------- #
+  CloudFrontDistribution:
+    Type: AWS::CloudFront::Distribution
+    Properties:
+      DistributionConfig:
+        Enabled: true
+        Comment: !Sub "${ProjectName}-web HTTPS front (S3 website origin)"
+        DefaultRootObject: index.html
+        PriceClass: PriceClass_100
+        Origins:
+          - Id: s3-website-origin
+            DomainName: !Select [1, !Split ["://", !GetAtt WebBucket.WebsiteURL]]
+            CustomOriginConfig:
+              HTTPPort: 80
+              HTTPSPort: 443
+              OriginProtocolPolicy: http-only
+              OriginSslProtocols: [TLSv1.2]
+        DefaultCacheBehavior:
+          TargetOriginId: s3-website-origin
+          ViewerProtocolPolicy: redirect-to-https
+          AllowedMethods: [GET, HEAD]
+          CachePolicyId: 658327ea-f89d-4fab-a63d-7e88639e58f6  # Managed-CachingOptimized
+          Compress: true
+        ViewerCertificate:
+          CloudFrontDefaultCertificate: true
+        Restrictions:
+          GeoRestriction:
+            RestrictionType: none
+            Quantity: 0
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+
+Outputs:
+  ApiUrl:
+    Description: Public base URL of the API (requires a JWT).
+    Value: !GetAtt HttpApi.ApiEndpoint
+
+  WebSiteUrl:
+    Description: S3 website endpoint (HTTP only — use the CloudFront URL).
+    Value: !GetAtt WebBucket.WebsiteURL
+
+  CloudFrontUrl:
+    Description: HTTPS front door to the web app.
+    Value: !Sub "https://${CloudFrontDistribution.DomainName}"
+
+  UserPoolId:
+    Description: Cognito user pool id.
+    Value: !Ref UserPool
+
+  UserPoolClientId:
+    Description: Cognito app client id (public, no secret).
+    Value: !Ref UserPoolClient
+
+  TableName:
+    Description: DynamoDB table name.
+    Value: !Ref ExpensesTable

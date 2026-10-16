@@ -77,8 +77,7 @@ deltas**. Pick two:
   clinic appointments, gig-payment ledger.
 - **A second language**: rebuild the API in Go or Node; two languages side by
   side is a strong signal.
-- **An event-driven addition**: an S3 upload that triggers a Lambda (this
-  project's V3 uses this for OCR — see [`v3-blueprint.md`](v3-blueprint.md)).
+- **An event-driven addition**: an S3 upload that triggers a Lambda.
 - **Infrastructure as code**: rebuild the whole stack in CloudFormation/SAM.
 - **CI/CD**: GitHub Actions running tests and deploying on push.
 - **A queue**: SQS between two services, to learn retries and idempotency.

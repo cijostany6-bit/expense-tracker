@@ -10,11 +10,11 @@ built and the numbers it produced).
 
 | Thing | Value |
 |---|---|
-| **Web app** | http://expense-tracker-web-896618135736.s3-website.eu-central-1.amazonaws.com |
+| **Web app (HTTPS)** | https://d3ssxu6u8n5flg.cloudfront.net |
 | **API base** | https://4haajttqgh.execute-api.eu-central-1.amazonaws.com |
 | **Demo user** | `demo.cijo@example.com` / `Testpass1` |
 | **Region** | `eu-central-1` (Frankfurt) |
-| **Status** | runs on HTTP (no TLS yet) — see gap **P1** below |
+| **Status** | HTTPS via CloudFront ✅ · IaC ✅ · tests + CI ✅ — see §2 |
 
 > Anyone with the URL can use the app; they can only ever see **their own**
 > expenses, because the partition key is their Cognito `sub`. Try it: sign up a
@@ -92,7 +92,8 @@ client removes."
 | **Load / performance** | `scripts/loadtest.py` (above) | ✅ done |
 | **Security — auth bypass** | call the API with no / a tampered / an expired token → expect `401`, and verify **Lambda never runs** in CloudWatch | ✅ done |
 | **Security — tenant isolation** | sign in user B, call with user A's token → only A's data | ✅ done |
-| **Input fuzzing** | send bad JSON, negative amounts, 10 MB notes, unicode, SQL/NoSQL-ish strings | ⬜ todo |
+| **Unit / regression** | `pytest` + `moto` over every route (offline) | ✅ done (21 tests) |
+| **Input fuzzing** | send bad JSON, negative amounts, 10 MB notes, unicode, SQL/NoSQL-ish strings | 🟡 partial (bad amounts/JSON covered by unit tests) |
 | **Browser / device** | Chrome, Safari, Firefox, iOS Safari, small screens | ⬜ partial |
 | **Accessibility** | keyboard-only run, contrast, screen-reader labels, Lighthouse a11y score | ⬜ todo |
 | **Error/chaos** | throttle DynamoDB, expire URLs, pull the network mid-upload | ⬜ todo |
@@ -107,13 +108,13 @@ Ordered by *what a reviewer would notice first*, not by effort.
 
 ### 🔴 P0 — must fix before anyone else uses it
 
-| # | Gap | Why it matters | Fix |
-|---|---|---|---|
-| P0-1 | **No HTTPS** (HTTP S3 website endpoint) | browsers warn, tokens/passwords travel in cleartext | **CloudFront + ACM certificate** in front of the bucket (also enables a custom domain) |
-| P0-2 | **No infrastructure as code** | the whole stack was built by hand — nobody can reproduce or review it | **CloudFormation / CDK / SAM** template per environment |
-| P0-3 | **No automated tests** | a refactor can silently break anything | **pytest + moto** (unit), SAM local / a test account (integration) |
-| P0-4 | **No CI/CD** | deploys are manual `aws` commands run from one laptop | **GitHub Actions**: lint → test → deploy |
-| P0-5 | **Lambda concurrency limit = 10** | load testing proved we 503 under modest traffic | request a quota increase (free) + set **reserved concurrency** deliberately |
+| # | Gap | Why it matters | Fix | Status |
+|---|---|---|---|---|
+| P0-1 | **No HTTPS** (HTTP S3 website endpoint) | browsers warn, tokens/passwords travel in cleartext | **CloudFront** in front of the bucket (default `*.cloudfront.net` cert) | ✅ done |
+| P0-2 | **No infrastructure as code** | the whole stack was built by hand — nobody can reproduce or review it | **CloudFormation** template ([`infra/template.yaml`](../infra/template.yaml)) | ✅ done |
+| P0-3 | **No automated tests** | a refactor can silently break anything | **pytest + moto** — 21 offline unit tests ([`tests/`](../tests/)) | ✅ done |
+| P0-4 | **No CI/CD** | deploys are manual `aws` commands run from one laptop | **GitHub Actions**: install deps → run tests on every push | ✅ CI done (deploy CD deferred) |
+| P0-5 | **Lambda concurrency limit = 10** | load testing proved we 503 under modest traffic | request a quota increase (free) + set **reserved concurrency** deliberately | ⬜ open (AWS support ticket) |
 
 ### 🟠 P1 — needed for a real product
 
@@ -157,14 +158,11 @@ Ordered by *what a reviewer would notice first*, not by effort.
 
 ## 3. Cost at scale (why serverless is the right call here)
 
-| Traffic | Lambda | API GW | DynamoDB | S3 | Textract | ≈ total/mo |
-|---|---|---|---|---|---|---|
-| **Demo (now)** | $0 (free) | $0 (free) | $0 (free) | ~$0 | $0* | **~$0** |
-| 10k users, 1k ops each | ~$0.20 | ~$0.10 | ~$0.10 | ~$0.10 | — | **< $1** |
-| 100k users, 1k ops each | ~$2 | ~$1 | ~$1 | ~$1 | — | **~$5** |
-
-\* Textract: free 100 pages/month for 3 months, then **$0.01/page** — so OCR-ing
-1,000 receipts/month would cost about **$10/month**.
+| Traffic | Lambda | API GW | DynamoDB | S3 | ≈ total/mo |
+|---|---|---|---|---|---|
+| **Demo (now)** | $0 (free) | $0 (free) | $0 (free) | ~$0 | **~$0** |
+| 10k users, 1k ops each | ~$0.20 | ~$0.10 | ~$0.10 | ~$0.10 | **< $1** |
+| 100k users, 1k ops each | ~$2 | ~$1 | ~$1 | ~$1 | **~$5** |
 
 The point: **cost scales with usage, not with existence.** The expensive part of
 most systems is the idle server. We have none.
@@ -173,9 +171,9 @@ most systems is the idle server. We have none.
 
 ## 4. Your next three actions (in order)
 
-1. **Put CloudFront + HTTPS in front of the web bucket** (P0-1). Biggest visible
-   credibility win, and it's a service worth being able to explain.
-2. **Request a Lambda concurrency quota increase** (P0-5) and re-run
-   `scripts/loadtest.py --concurrency 40` to prove the fix.
-3. **Write the CloudFormation template** (P0-2) — this doubles as the V3
-   infrastructure and the thing that makes the whole project reproducible.
+1. **Request a Lambda concurrency quota increase** (P0-5 — the last open P0) and
+   re-run `scripts/loadtest.py --concurrency 40` to prove the fix.
+2. **Add a custom domain + ACM certificate** on top of CloudFront, and an
+   **alarm** on the API Lambda's 5xx/Throttles (P1-1).
+3. **Push the repo to GitHub** so the Actions workflow (already committed) runs
+   green on every push, and extend it with a `deploy` job.

@@ -56,14 +56,11 @@ that makes it happen. Use this as your "what did you build?" script.
 | Not built | Reason | Would add |
 |---|---|---|
 | Orgs / teams / RBAC | scope | Cognito **groups** → `cognito:groups` claim → Lambda authorisation |
-| OCR of receipts | cost/complexity | **Textract** + async processing |
 | Multi-currency conversion | needs a rate source | cached FX rates + Lambda |
 | Budgets & alerts | would need scheduled jobs | **EventBridge Scheduler** + SNS |
 | Recurring expenses | domain complexity | DynamoDB streams / EventBridge |
-| HTTPS + custom domain | next step | **CloudFront** + ACM cert |
-| Infrastructure as code | learning path | **CloudFormation** (Project C) |
-| CI/CD | learning path | **GitHub Actions** (Project B/C) |
-| Automated tests | time | pytest + moto, or SAM local |
+| Custom domain + ACM cert | next step | **ACM** cert + CloudFront alias (HTTPS itself is done) |
+| Deploy CD (auto-deploy on merge) | next step | extend **GitHub Actions** with a deploy job |
 
 > Rule of thumb: a strong answer names what you *chose not to do* and why. That
 > shows judgment, not a lack of ideas.

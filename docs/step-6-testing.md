@@ -132,9 +132,9 @@ curl -s $API/summary  -H "Authorization: $TOKEN"
 
 | Idea | Why it's out of Phase 1 | Where it goes |
 |---|---|---|
-| CloudFront + HTTPS + custom domain | extra moving parts | Project C |
-| Textract OCR on receipts | cost/complexity | Project C |
+| Custom domain + ACM cert | needs a domain purchase | Phase 2 |
 | Athena / QuickSight analytics | out of scope for a tracker | Project C |
 | Budgets/alerts per entity, RBAC/orgs | scope | Phase 2 |
-| CI/CD (GitHub Actions → deploy) | DevOps theme | Project B/C |
-| CloudFormation/IaC for all of this | IaC theme | Project C |
+| ~~CloudFront + HTTPS~~ | **done** | ✅ CloudFront default cert |
+| ~~Automated tests~~ | **done** | ✅ pytest + moto (21 tests) |
+| ~~CI~~ | **done** | ✅ GitHub Actions runs the tests |

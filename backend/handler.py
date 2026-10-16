@@ -17,7 +17,7 @@ import os
 import re
 import uuid
 from datetime import datetime, timezone
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 
 import boto3
 from botocore.config import Config
@@ -92,7 +92,7 @@ def create_expense(event):
     # minimal validation
     try:
         amount = Decimal(str(payload["amount"]))
-    except (KeyError, ValueError, TypeError):
+    except (KeyError, ValueError, TypeError, InvalidOperation):
         return _response(400, {"error": "'amount' is required and must be a number"})
     if amount <= 0:
         return _response(400, {"error": "'amount' must be greater than 0"})
@@ -121,7 +121,7 @@ def delete_expense(event):
         Key={"userId": user_id, "expenseId": expense_id},
         ReturnValues="ALL_OLD",
     )
-    if "Attributes" not in result:
+    if not result.get("Attributes"):
         return _response(404, {"error": "expense not found"})
     return _response(200, {"deleted": expense_id})
 
@@ -139,12 +139,15 @@ def create_receipt_url(event):
         ExpiresIn=300,  # 5 minutes to complete the upload
     )
     # remember which object belongs to which expense
-    table.update_item(
-        Key={"userId": user_id, "expenseId": expense_id},
-        UpdateExpression="SET receiptKey = :k",
-        ConditionExpression="attribute_exists(expenseId)",
-        ExpressionAttributeValues={":k": key},
-    )
+    try:
+        table.update_item(
+            Key={"userId": user_id, "expenseId": expense_id},
+            UpdateExpression="SET receiptKey = :k",
+            ConditionExpression="attribute_exists(expenseId)",
+            ExpressionAttributeValues={":k": key},
+        )
+    except table.meta.client.exceptions.ConditionalCheckFailedException:
+        return _response(404, {"error": "expense not found"})
     return _response(200, {"uploadUrl": url, "receiptKey": key})
 
 
@@ -165,7 +168,7 @@ def update_expense(event):
     if "amount" in payload:
         try:
             amount = Decimal(str(payload["amount"]))
-        except (ValueError, TypeError):
+        except (ValueError, TypeError, InvalidOperation):
             return _response(400, {"error": "'amount' must be a number"})
         if amount <= 0:
             return _response(400, {"error": "'amount' must be greater than 0"})
