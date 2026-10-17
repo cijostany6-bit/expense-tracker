@@ -1,0 +1,370 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Expense Tracker — the complete guide</title>
+<!-- the SAME renderers the live site uses, so the PDF matches the site exactly -->
+<script src="https://cdn.jsdelivr.net/npm/marked@15/marked.min.js"></script>
+<script src="course/course.js" defer></script>
+<style>
+/* ══════════════════════════════════════════════════════════════════
+   Printable build — light theme, tuned for A4 paper.
+   Rendered by Chrome headless (one part at a time) into PDF.
+   ?part=all|guide|m1|m2 …  selects what this pass renders.
+   ══════════════════════════════════════════════════════════════════ */
+:root{
+  --ink:#111827; --muted:#5b6577; --line:#d7dce5; --line2:#e8ecf3;
+  --accent:#0e7490; --accent2:#7c3aed; --pink:#be1b6a; --ok:#047857; --warn:#b45309;
+  --bg:#ffffff; --soft:#f6f8fb;
+}
+*{box-sizing:border-box}
+@page{ size:A4; margin:15mm 14mm 16mm; }
+html{ -webkit-print-color-adjust:exact; print-color-adjust:exact; }
+body{
+  margin:0; background:var(--bg); color:var(--ink);
+  font:10.6pt/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+}
+
+/* ── cover ── */
+.cover{ display:flex; flex-direction:column; justify-content:center; min-height:245mm; break-after:page; }
+.cover .badge{ font-size:40pt; line-height:1; margin-bottom:6mm; }
+.cover h1{ font-size:30pt; line-height:1.12; margin:0 0 4mm; letter-spacing:-.5pt; }
+.cover h1 .g{ color:var(--accent); }
+.cover .sub{ font-size:13pt; color:var(--muted); margin:0 0 10mm; max-width:150mm; }
+.cover .band{ height:6mm; width:70mm; border-radius:99px;
+  background:linear-gradient(90deg,var(--accent),var(--accent2),var(--pink)); margin:0 0 10mm; }
+.cover ul{ list-style:none; margin:0 0 10mm; padding:0; font-size:11pt; }
+.cover ul li{ margin:2.4mm 0; padding-left:7mm; position:relative; }
+.cover ul li::before{ content:"◆"; position:absolute; left:0; color:var(--accent); font-size:8pt; top:.4mm; }
+.cover .meta{ font-size:9.5pt; color:var(--muted); border-top:1px solid var(--line); padding-top:4mm; }
+.cover .meta code{ font-size:9pt; }
+
+/* ── table of contents ── */
+.toc{ break-after:page; }
+.toc h2{ font-size:16pt; margin:0 0 5mm; }
+.toc .g{ margin:5mm 0 1.5mm; font-weight:700; color:var(--accent); font-size:10.5pt; text-transform:uppercase; letter-spacing:.6pt; }
+.toc ol{ margin:0; padding-left:7mm; }
+.toc li{ margin:1.4mm 0; }
+.toc a{ color:var(--ink); text-decoration:none; }
+
+/* ── structure ── */
+.part-title{
+  break-before:page; font-size:20pt; margin:0 0 2mm; color:var(--accent);
+  border-bottom:2px solid var(--accent); padding-bottom:2mm;
+}
+.lead{ font-size:11.5pt; color:var(--muted); margin:0 0 6mm; }
+.group{ font-size:14pt; margin:9mm 0 3mm; padding:2mm 0 2mm 4mm; color:var(--accent2);
+  border-left:4px solid var(--accent2); break-after:avoid; }
+.doc{ break-before:page; }
+.doc .kicker{ font-size:9pt; text-transform:uppercase; letter-spacing:.8pt; color:var(--muted); margin:0 0 1mm; }
+
+/* ── typography ── */
+h1,h2,h3,h4{ line-height:1.25; break-after:avoid; }
+.doc h1,.module h1{ font-size:17pt; margin:0 0 3mm; color:var(--accent); }
+h2{ font-size:13.5pt; margin:7mm 0 2.5mm; border-bottom:1px solid var(--line2); padding-bottom:1.4mm; }
+h3{ font-size:11.6pt; margin:5mm 0 2mm; color:#1f2937; }
+h4{ font-size:10.6pt; margin:4mm 0 1.5mm; color:#374151; }
+p{ margin:0 0 2.6mm; }
+ul,ol{ margin:0 0 3mm; padding-left:6mm; }
+li{ margin:1.1mm 0; }
+a{ color:var(--accent); text-decoration:none; overflow-wrap:anywhere; }
+strong{ color:#0b1220; }
+hr{ border:none; border-top:1px solid var(--line); margin:6mm 0; }
+blockquote{ margin:3mm 0; padding:2mm 4mm; border-left:3px solid var(--line); background:var(--soft); color:#374151; }
+
+code{ font-family:"SF Mono",ui-monospace,Menlo,Consolas,monospace; font-size:8.8pt;
+  background:#eef2f7; padding:.3mm 1.2mm; border-radius:3px; color:#0b1220; }
+pre{ background:var(--soft); border:1px solid var(--line); border-radius:6px;
+  padding:3mm 4mm; margin:3mm 0; overflow-wrap:anywhere; white-space:pre-wrap; break-inside:avoid; }
+pre code{ background:none; padding:0; font-size:8.4pt; line-height:1.45; }
+
+/* ── tables (from markdown) ── */
+table{ border-collapse:collapse; width:100%; margin:3mm 0; font-size:8.8pt; break-inside:avoid; }
+th,td{ border:1px solid var(--line); padding:1.6mm 2.2mm; text-align:left; vertical-align:top; }
+th{ background:#eef2f7; color:#0b1220; font-size:8.4pt; }
+tr:nth-child(even) td{ background:#fafcfe; }
+
+/* ── callouts (course) ── */
+.callout{ border-radius:0 6px 6px 0; padding:3mm 4mm; margin:4mm 0;
+  border-left:4px solid var(--accent); background:#eef7fa; break-inside:avoid; }
+.callout h4{ margin:0 0 1mm; font-size:10pt; color:var(--accent); }
+.callout p{ margin:1mm 0; }
+.callout.interview{ border-left-color:var(--pink); background:#fdeef5; }
+.callout.interview h4{ color:var(--pink); }
+.callout.tip{ border-left-color:var(--ok); background:#ecfdf5; }
+.callout.tip h4{ color:var(--ok); }
+.callout.warn{ border-left-color:var(--warn); background:#fff7ed; }
+.callout.warn h4{ color:var(--warn); }
+.callout.key{ border-left-color:var(--accent2); background:#f5f0fd; }
+.callout.key h4{ color:var(--accent2); }
+
+/* ── "why not X" expanders → always open on paper ── */
+.compare{ margin:4mm 0; }
+.compare details{ background:var(--soft); border:1px solid var(--line); border-radius:6px;
+  padding:2.6mm 4mm; margin:2.4mm 0; break-inside:avoid; }
+.compare summary{ font-weight:700; font-size:10.4pt; list-style:none; }
+.compare summary::-webkit-details-marker{ display:none; }
+.compare details .why{ display:block !important; margin-top:1.6mm; color:#374151; }
+.compare .no{ color:#b91c1c; }
+
+/* ── interactive diagrams → static on paper ── */
+figure.seq,figure.diagram{ background:var(--soft); border:1px solid var(--line); border-radius:8px;
+  padding:4mm; margin:4mm 0; break-inside:avoid; }
+figure.seq figcaption,figure.diagram figcaption{ font-size:9.6pt; font-weight:700; color:var(--accent); margin-bottom:2.5mm; }
+figure.seq svg,figure.diagram svg{ width:100%; height:auto; display:block; }
+.seq .actor rect{ fill:#e2eef3; stroke:#0e7490; }
+.seq .actor text{ fill:#0b1220; font-size:12px; font-weight:700; font-family:inherit; }
+.seq .lifeline{ stroke:#c3ccda; stroke-dasharray:4 5; }
+.seq .mstep line,.seq .mstep path{ stroke:#0e7490; stroke-width:1.8; fill:none; }
+.seq .mstep.ret line,.seq .mstep.ret path{ stroke:#047857; stroke-dasharray:5 4; }
+.seq .mstep text{ fill:#1e293b; font-size:11.5px; font-family:inherit; }
+.hotspot rect{ fill:#e2eef3; stroke:#0e7490; }
+.hotspot text{ fill:#0b1220; font-size:12px; font-family:inherit; }
+.arch-arrow{ stroke:#94a3b8; stroke-width:1.6; fill:none; }
+.arch-arrow.dash{ stroke-dasharray:5 5; }
+.arch-lbl{ fill:#64748b; font-size:10.5px; font-family:inherit; }
+
+/* legends we generate from the diagram data (so paper readers get every note) */
+.seq-legend,.hot-legend{ margin:3mm 0 0; padding-left:6mm; font-size:9pt; color:#374151; }
+.seq-legend li,.hot-legend li{ margin:1.4mm 0; break-inside:avoid; }
+.seq-legend b,.hot-legend b{ color:#0b1220; }
+.diagram-note,.seq-note,.seq-controls{ display:none !important; }
+
+/* ── quiz → show the answer key, hide the widgets ── */
+.quiz{ margin:4mm 0; }
+.quiz .quizbar{ display:none; }
+ol.qlist{ list-style:decimal; padding-left:7mm; margin:2mm 0; }
+li.q{ margin:3mm 0; break-inside:avoid; }
+li.q .qtext{ font-weight:600; color:#0b1220; margin:0 0 1.6mm; }
+li.q .reveal,li.q .grade{ display:none !important; }
+li.q .answer{ display:block !important; background:#ecfdf5; border:1px solid #a7f3d0;
+  border-radius:6px; padding:2.4mm 3.4mm; font-size:9.4pt; color:#0f2e24; }
+li.q .answer::before{ content:"Answer key — "; font-weight:700; color:var(--ok); }
+
+/* ── course map cards ── */
+.modgrid{ display:grid; grid-template-columns:1fr 1fr; gap:2.4mm; margin:3mm 0 6mm; }
+.modcard{ border:1px solid var(--line); border-radius:6px; padding:2.6mm 3.2mm; break-inside:avoid;
+  display:flex; gap:3mm; align-items:flex-start; color:var(--ink); text-decoration:none; }
+.modcard .num{ flex:0 0 7mm; height:7mm; border-radius:4px; display:grid; place-items:center;
+  font-weight:800; font-size:9pt; background:#e2eef3; color:var(--accent); }
+.modcard .t{ font-weight:700; font-size:9.4pt; }
+.modcard .d{ font-size:8.4pt; color:var(--muted); }
+.modcard .minibar{ height:1.2mm; border-radius:99px; background:#eef2f7; margin-top:1.6mm; overflow:hidden; }
+.modcard .minibar span{ display:block; height:100%; background:var(--accent); }
+.modcard .tag{ display:none; }
+.modcard.soon{ opacity:.62; }
+
+.module{ break-before:page; }
+.module .kicker{ font-size:9pt; text-transform:uppercase; letter-spacing:.8pt; color:var(--muted); margin:0 0 1mm; }
+
+/* when a part is removed we don't want its page break to leave a blank page */
+.hidden{ display:none !important; }
+</style>
+</head>
+<body>
+
+<!-- ═══════════ everything that belongs to Part I + the course map ═══════════ -->
+<div id="guide-part">
+  <section class="cover">
+    <div class="badge">💸</div>
+    <h1>Build &amp; understand a <span class="g">serverless</span> app on AWS</h1>
+    <div class="band"></div>
+    <p class="sub">
+      The complete Expense Tracker write-up — every service, every decision, every trade-off —
+      drawn from the real code and the live infrastructure.
+    </p>
+    <ul>
+      <li><strong>Part I — The guide.</strong> The full project: what it does, how one request flows, and a step-by-step build log.</li>
+      <li><strong>Part II — The course.</strong> Service-by-service lessons with diagrams and a deep question + answer key for each.</li>
+      <li><strong>Stack:</strong> CloudFront · S3 · Cognito · API Gateway · Lambda · DynamoDB · IAM · Bedrock · Route&nbsp;53 · ACM · CloudFormation</li>
+    </ul>
+    <div class="meta">
+      <p style="margin:0 0 1mm"><strong>Live:</strong> <code>https://worldofvpc.online</code> &nbsp;·&nbsp; <strong>Source:</strong> <code>github.com/cijostany6-bit/expense-tracker</code></p>
+      <p style="margin:0">Region <code>eu-central-1</code> · Generated <span id="genDate">—</span> · Everything here runs entirely on AWS free tiers (≈&nbsp;$0.50/mo standing cost).</p>
+    </div>
+  </section>
+
+  <section class="toc">
+    <h2>Contents</h2>
+    <div id="tocBody"></div>
+  </section>
+
+  <h1 class="part-title">Part I — The guide</h1>
+  <p class="lead">Everything about how this project works and how it was built — start at the top and read straight through.</p>
+  <div id="guide"></div>
+
+  <h1 class="part-title">Part II — The interactive course</h1>
+  <p class="lead">
+    Each module teaches one part of the system, shows a diagram of it, then puts you through
+    deep questions — <em>how we used it, why we chose it, what the alternatives were, and what we'd change</em>.
+    On paper the diagrams become static figures with a numbered legend, and each quiz is followed by its answer key.
+  </p>
+  <h2>Course map</h2>
+  <div class="modgrid" id="modgrid"></div>
+</div>
+
+<!-- ═══════════ Part II — the course modules (built from course.js) ═══════════ -->
+<div id="course"></div>
+
+<script>
+/* ══════════════════════════════════════════════════════════════════
+   Assemble the PDF.  ?part=all  → everything (for on-screen viewing)
+                    ?part=guide → cover + contents + Part I + course map
+                    ?part=m<N>  → a single course module
+   The build script renders each part separately and merges them, because
+   a single very large print job is unreliable in headless Chrome.
+   ══════════════════════════════════════════════════════════════════ */
+const PART = (new URLSearchParams(location.search).get("part") || "all").toLowerCase();
+const DOCS = [
+  { group: "Start here", items: [
+    { f: "readme.md",              t: "Project overview" },
+    { f: "capabilities.md",        t: "What this app can do" },
+    { f: "how-it-works.md",        t: "How one request flows" },
+    { f: "services-in-depth.md",   t: "AWS services, in depth" }
+  ]},
+  { group: "Build log (do it in this order)", items: [
+    { f: "step-1a-dynamodb.md",    t: "1a · DynamoDB data layer" },
+    { f: "step-1b-s3.md",          t: "1b · S3 private bucket" },
+    { f: "step-2-cognito.md",      t: "2 · Cognito sign-in" },
+    { f: "step-3-iam-lambda.md",   t: "3 · IAM + Lambda" },
+    { f: "step-4-api-gateway.md",  t: "4 · API Gateway JWT" },
+    { f: "step-5-frontend.md",     t: "5 · Frontend on S3" },
+    { f: "step-6-testing.md",      t: "6 · End-to-end testing" },
+    { f: "step-7-hardening.md",    t: "7 · Hardening (HTTPS · IaC · tests · CI)" },
+    { f: "step-8-custom-domain.md", t: "8 · Custom domain (GoDaddy → Route 53 → ACM)" },
+    { f: "step-9-receipt-ocr.md",  t: "9 · Receipt OCR with Bedrock" }
+  ]},
+  { group: "Operate & scale", items: [
+    { f: "production-readiness.md", t: "Production readiness" },
+    { f: "replicate-it.md",        t: "Build it yourself (checklist)" }
+  ]}
+];
+
+const esc = (s) => String(s == null ? "" : s).replace(/[&<>"]/g, (c) =>
+  ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+const slug = (f) => f.replace(/\.md$/, "");
+
+async function fetchDoc(f) {
+  const tries = (f === "readme.md")
+    ? ["content/readme.md", "../README.md", "README.md"]
+    : ["content/" + f, "../docs/" + f, "docs/" + f];
+  for (const url of tries) {
+    try { const r = await fetch(url); if (r.ok) return await r.text(); } catch (e) {}
+  }
+  return null;
+}
+const renderMd = (md) =>
+  (window.marked && typeof window.marked.parse === "function")
+    ? window.marked.parse(md)
+    : "<pre class='raw'>" + esc(md) + "</pre>";
+
+const waitForETCourse = async () => {
+  for (let i = 0; i < 160 && !window.ETCourse; i++) await new Promise((r) => setTimeout(r, 50));
+  return window.ETCourse;
+};
+
+async function build() {
+  document.getElementById("genDate").textContent =
+    new Date().toLocaleDateString("en-GB", { year: "numeric", month: "long", day: "numeric" });
+
+  const etc = await waitForETCourse();
+  const ALL = etc && etc.modules ? etc.modules : [];
+  const live = ALL.filter((m) => !m.soon);
+  const one = /^m(\d+)$/.exec(PART);
+  const mods = one ? live.filter((m) => m.n === Number(one[1])) : live;
+
+  const wantGuide  = (PART === "all" || PART === "guide");
+  const wantCourse = (PART === "all" || PART === "course" || !!one);
+
+  // ── contents ──
+  document.getElementById("tocBody").innerHTML =
+    DOCS.map((g) =>
+      `<div class="g">${esc(g.group)}</div><ol>` +
+      g.items.map((i) => `<li><a href="#${slug(i.f)}">${esc(i.t)}</a></li>`).join("") +
+      `</ol>`).join("") +
+    (live.length
+      ? `<div class="g">Part II · The interactive course</div><ol>` +
+        live.map((m) => `<li><a href="#m${m.n}">Module ${m.n} · ${esc(m.title)}</a></li>`).join("") +
+        `</ol>`
+      : "");
+
+  // ── trim what this part doesn't need ──
+  if (!wantGuide) { const g = document.getElementById("guide-part"); if (g) g.remove(); }
+  if (!wantCourse) { const c = document.getElementById("course"); if (c) c.remove(); }
+
+  // ── Part I body ──
+  if (wantGuide) {
+    const guide = document.getElementById("guide");
+    let html = "";
+    for (const g of DOCS) {
+      html += `<h2 class="group">${esc(g.group)}</h2>`;
+      for (const item of g.items) {
+        const md = await fetchDoc(item.f);
+        html += `<section class="doc" id="${slug(item.f)}">
+          <p class="kicker">${esc(g.group)} · ${esc(item.t)}</p>
+          ${md ? renderMd(md) : `<p class="lead">Could not load <code>${esc(item.f)}</code>.</p>`}
+        </section>`;
+      }
+    }
+    guide.innerHTML = html;
+  }
+
+  // ── Part II body (course lessons) ──
+  if (wantCourse) {
+    const courseEl = document.getElementById("course");
+    for (const m of mods) {
+      let lesson = "";
+      try {
+        const r = await fetch("course/" + m.file);
+        const doc = new DOMParser().parseFromString(await r.text(), "text/html");
+        const l = doc.querySelector(".lesson");
+        lesson = l ? l.innerHTML : "";
+      } catch (e) { lesson = `<p class="lead">Could not load ${esc(m.file)}.</p>`; }
+      const sec = document.createElement("section");
+      sec.className = "module";
+      sec.id = "m" + m.n;
+      sec.innerHTML = `<p class="kicker">Interactive course · Module ${m.n} of ${ALL.length}</p>
+        <h1>${m.icon ? m.icon + " " : ""}${esc(m.title)}</h1>${lesson}`;
+      courseEl.appendChild(sec);
+    }
+  }
+
+  // ── let course.js draw the SVG diagrams on the injected content ──
+  if (etc) etc.render();
+
+  // ── paper legends: every diagram step / service, as readable text ──
+  document.querySelectorAll("figure.seq").forEach((fig) => {
+    const s = fig.querySelector('script[type="application/json"]');
+    if (!s) return;
+    let spec; try { spec = JSON.parse(s.textContent); } catch (e) { return; }
+    const ol = document.createElement("ol");
+    ol.className = "seq-legend";
+    (spec.steps || []).forEach((st) => {
+      const li = document.createElement("li");
+      li.innerHTML = `<b>${esc(st.m || "")}</b> — ${st.note || ""}`;
+      ol.appendChild(li);
+    });
+    fig.appendChild(ol);
+  });
+  document.querySelectorAll("figure.diagram").forEach((fig) => {
+    const hs = fig.querySelectorAll(".hotspot");
+    if (!hs.length) return;
+    const ul = document.createElement("ul");
+    ul.className = "hot-legend";
+    hs.forEach((h) => {
+      const li = document.createElement("li");
+      li.innerHTML = `<b>${esc(h.dataset.name || "")}</b> — ${h.dataset.note || ""}`;
+      ul.appendChild(li);
+    });
+    fig.appendChild(ul);
+  });
+
+  document.title = "Expense Tracker — the complete guide";
+  window.__PDF_READY__ = true;
+}
+
+build();
+</script>
+</body>
+</html>

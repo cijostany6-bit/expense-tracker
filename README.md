@@ -18,7 +18,9 @@ deeper.
 |---|---|
 | **Web app** (HTTPS) | https://d3ssxu6u8n5flg.cloudfront.net |
 | **Web app** — custom domain | https://worldofvpc.online ✅ |
-| **Learning site** (how this was built) | https://d3ssxu6u8n5flg.cloudfront.net/learn/ |
+| **Learning site** (how this was built) | https://worldofvpc.online/learn/ |
+| **Interactive course** (module by module) | https://worldofvpc.online/learn/course/ |
+| **📄 Whole guide as a PDF** (87 pages, ~3 MB) | https://worldofvpc.online/learn/expense-tracker-guide.pdf |
 | API | https://4haajttqgh.execute-api.eu-central-1.amazonaws.com |
 | Demo user | `demo.cijo@example.com` / `Testpass1` |
 
@@ -193,10 +195,18 @@ expense-tracker/
 │   └── error.html
 ├── scripts/
 │   ├── loadtest.py               ← real load test: throughput, p50/p90/p99, errors
-│   └── deploy-web.sh             ← safe S3 deploy (app + learn) + CF invalidation
+│   ├── deploy-web.sh             ← safe S3 deploy (app + learn + PDF) + CF invalidation
+│   ├── build-pdf.sh              ← render the whole site to ONE PDF (Chrome headless + pypdf)
+│   └── pdf-merge.py              ← lossless PDF merge used by build-pdf.sh
 ├── learn/
 │   ├── index.html                ← the learning site (renders docs/*.md in the browser)
-│   └── site.css
+│   ├── print.html                ← print/PDF build page (reuses the real renderers)
+│   ├── site.css
+│   └── course/
+│       ├── index.html            ← the interactive course map + progress
+│       ├── course.js             ← the course engine (modules, diagrams, quizzes)
+│       ├── course.css
+│       └── module-01-architecture.html
 └── docs/
     ├── capabilities.md           ← what the app can do, mapped to services
     ├── how-it-works.md           ← every request traced hop by hop
@@ -285,8 +295,20 @@ python3 -m venv .venv && .venv/bin/pip install -r tests/requirements-dev.txt
 ### 🌐 Deploy the web app + learning site
 
 ```bash
-scripts/deploy-web.sh   # syncs app/ + learn/ + docs/ and invalidates CloudFront
+scripts/deploy-web.sh   # syncs app/ + learn/ + docs/ + the PDF, and invalidates CloudFront
 ```
+
+### 📄 Build the whole guide as one PDF
+
+```bash
+scripts/build-pdf.sh    # → dist/expense-tracker-guide.pdf  (all docs + the course)
+```
+
+It renders `learn/print.html` (which reuses the site's own renderers — `marked` for
+the docs, `course.js` for the diagrams) in headless Chrome, **one part at a time**
+(a single ~90-page job is unreliable), then stitches the parts losslessly with
+`pypdf`. The generated file is git-ignored; `deploy-web.sh` publishes it to
+`/learn/expense-tracker-guide.pdf` so it can be shared by link.
 
 ## 💸 Cost
 

@@ -35,6 +35,16 @@ done
 aws s3 cp "$ROOT/README.md" "s3://$BUCKET/learn/content/readme.md" \
   --cache-control "public,max-age=300"
 
+# the generated single-file PDF (built by scripts/build-pdf.sh), if present
+PDF="$ROOT/dist/expense-tracker-guide.pdf"
+if [ -f "$PDF" ]; then
+  echo "▶ deploying guide PDF -> s3://$BUCKET/learn/expense-tracker-guide.pdf"
+  aws s3 cp "$PDF" "s3://$BUCKET/learn/expense-tracker-guide.pdf" \
+    --content-type "application/pdf" --cache-control "public,max-age=300"
+else
+  echo "ℹ no PDF found (run scripts/build-pdf.sh to generate dist/expense-tracker-guide.pdf)"
+fi
+
 echo "▶ invalidating CloudFront ($DISTRIBUTION_ID)"
 aws cloudfront create-invalidation --distribution-id "$DISTRIBUTION_ID" \
   --paths "/*" --query 'Invalidation.Id' --output text
