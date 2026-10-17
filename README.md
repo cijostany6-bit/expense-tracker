@@ -17,7 +17,7 @@ deeper.
 | Piece | URL |
 |---|---|
 | **Web app** (HTTPS) | https://d3ssxu6u8n5flg.cloudfront.net |
-| **Web app** — custom domain | https://worldofvpc.online *(live once DNS propagates — see [step 8](docs/step-8-custom-domain.md))* |
+| **Web app** — custom domain | https://worldofvpc.online ✅ |
 | **Learning site** (how this was built) | https://d3ssxu6u8n5flg.cloudfront.net/learn/ |
 | API | https://4haajttqgh.execute-api.eu-central-1.amazonaws.com |
 | Demo user | `demo.cijo@example.com` / `Testpass1` |

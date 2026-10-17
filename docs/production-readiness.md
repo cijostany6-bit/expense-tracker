@@ -15,7 +15,7 @@ built and the numbers it produced).
 | **Demo user** | `demo.cijo@example.com` / `Testpass1` |
 | **Region** | `eu-central-1` (Frankfurt) |
 | **Status** | HTTPS via CloudFront ✅ · custom domain ✅ · receipt OCR ✅ · IaC ✅ · tests + CI ✅ — see §2 |
-| **Custom domain** | https://worldofvpc.online (live once DNS propagates — see [step 8](step-8-custom-domain.md)) |
+| **Custom domain** | https://worldofvpc.online ✅ (Route 53 + ACM — see [step 8](step-8-custom-domain.md)) |
 
 > Anyone with the URL can use the app; they can only ever see **their own**
 > expenses, because the partition key is their Cognito `sub`. Try it: sign up a

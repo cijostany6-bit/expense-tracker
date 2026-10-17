@@ -4,6 +4,12 @@ Step 7 gave the app HTTPS on a `*.cloudfront.net` address. Step 8 makes it look
 like a product: **`https://worldofvpc.online`**, with a padlock and no domain in
 the URL that screams "demo".
 
+> **✅ Live (2026-10-17).** `https://worldofvpc.online` and
+> `https://www.worldofvpc.online` serve the app on the ACM certificate
+> (`worldofvpc.online`, `www.worldofvpc.online`), via Route 53 A/AAAA **alias**
+> records pointing at CloudFront. The registrar-side NS change propagated through
+> the registry within the hour.
+
 The whole thing is one idea — *three different layers that beginners conflate* —
 plus a couple of AWS-specific rules that trip everyone up once.
 
