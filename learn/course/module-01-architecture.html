@@ -1,0 +1,388 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>M1 · Architecture — Expense Tracker course</title>
+<link rel="stylesheet" href="course.css" />
+<script src="course.js" defer></script>
+</head>
+<body data-module="m1">
+
+<div class="topbar">
+  <a class="brand" href="./"><span class="logo">🎓</span> Course</a>
+  <span class="crumb" id="mcrumb"></span>
+  <div class="spacer"></div>
+  <div class="globar" title="course progress"><span></span></div>
+  <a class="btn" href="../../">Live app</a>
+</div>
+
+<div class="wrap">
+  <header class="hero">
+    <h1>🏗️ <span id="mtitle">Architecture &amp; the request lifecycle</span></h1>
+    <p class="lede">The whole system on one page: what each piece does, the <em>two</em> request paths,
+      and the reasoning that makes this "a portfolio project" instead of "a tutorial".</p>
+  </header>
+
+  <article class="lesson">
+
+    <h2>1 · The 90-second pitch (learn to say this cold)</h2>
+    <p>In an interview, the first question is almost always <em>"tell me about your project"</em>.
+      You want a version you can deliver in ~90 seconds, then let them dig. Say it out loud until it's smooth:</p>
+    <div class="callout interview">
+      <h4>🎤 Say this</h4>
+      <p>"It's a multi-user expense tracker that runs <strong>entirely serverless</strong> on AWS. The
+      frontend is a static single-page app on <strong>S3</strong>, served over HTTPS through
+      <strong>CloudFront</strong> on a custom domain. Users authenticate with <strong>Cognito</strong>,
+      which issues a JWT. Every API call carries that JWT to <strong>API Gateway</strong>, which
+      <strong>verifies the signature at the edge</strong> — so Lambda never sees an untrusted identity.
+      It routes to a single router <strong>Lambda</strong> that does the business logic against
+      <strong>DynamoDB</strong>, where the partition key is the Cognito <code>sub</code> — so a user can
+      <em>only ever</em> read their own rows; that's the tenant isolation. Receipts upload
+      <strong>straight from the browser to a private S3 bucket via presigned URLs</strong>. In V3, an
+      <strong>S3 event triggers a second Lambda</strong> that reads the receipt with
+      <strong>Bedrock's Nova Lite vision model</strong> and fills the expense in <em>asynchronously</em> —
+      the row appears instantly and the AI call can fail without blocking the user. The whole stack is
+      <strong>CloudFormation</strong>, tested <strong>offline</strong> with pytest+moto, green in CI, runs
+      in the <strong>EU</strong>, and costs effectively <strong>nothing at rest</strong>."</p>
+    </div>
+    <div class="callout tip">
+      <h4>💡 Interview craft</h4>
+      <p>Notice what that does: it <strong>names every service</strong>, gives a <strong>reason</strong> for
+      the interesting ones (edge verification, tenant isolation, async OCR, cost), and ends on a
+      <em>principle</em>. That invites the follow-up you want ("tell me about the tenant isolation").</p>
+    </div>
+
+    <h2>2 · The map — click any service</h2>
+    <p>This is the real topology. The dashed lines are "verify / observe", the purple line is the AI call.
+      <strong>Click a box</strong> to see that service's job in <em>this</em> project.</p>
+
+    <figure class="diagram">
+      <figcaption>The Expense Tracker on AWS — click a service</figcaption>
+      <svg viewBox="0 0 960 500" role="img" aria-label="Architecture diagram">
+        <defs>
+          <marker id="arrow" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto" markerUnits="strokeWidth">
+            <path d="M0,0 L7,3 L0,6 z" fill="rgba(150,170,210,.95)"/>
+          </marker>
+        </defs>
+
+        <!-- arrows (drawn first, under the boxes) -->
+        <line class="arch-arrow" x1="150" y1="68"  x2="150" y2="114"/>
+        <line class="arch-arrow" x1="150" y1="168" x2="150" y2="214"/>
+        <line class="arch-arrow" x1="250" y1="44"  x2="374" y2="44"/>
+        <line class="arch-arrow dash" x1="480" y1="68" x2="480" y2="134"/>
+        <path class="arch-arrow" d="M250,58 C360,122 600,122 704,60"/>
+        <line class="arch-arrow" x1="810" y1="68"  x2="810" y2="254"/>
+        <line class="arch-arrow bedrock" x1="810" y1="308" x2="810" y2="394"/>
+        <line class="arch-arrow" x1="710" y1="284" x2="586" y2="414"/>
+        <line class="arch-arrow" x1="480" y1="188" x2="480" y2="254"/>
+        <line class="arch-arrow" x1="480" y1="308" x2="480" y2="394"/>
+        <line class="arch-arrow dash" x1="380" y1="290" x2="256" y2="416"/>
+
+        <!-- arrow labels -->
+        <text class="arch-lbl" x="162" y="96"  text-anchor="start">origin (HTTP)</text>
+        <text class="arch-lbl" x="313" y="36"  text-anchor="middle">sign in → JWT</text>
+        <text class="arch-lbl" x="492" y="104" text-anchor="start">JWKS (cached)</text>
+        <text class="arch-lbl" x="500" y="118" text-anchor="middle">presigned PUT (direct)</text>
+        <text class="arch-lbl" x="822" y="164" text-anchor="start">ObjectCreated</text>
+        <text class="arch-lbl" x="822" y="356" text-anchor="start">converse()</text>
+        <text class="arch-lbl" x="660" y="340" text-anchor="middle">UpdateItem</text>
+        <text class="arch-lbl" x="300" y="352" text-anchor="middle">logs</text>
+        <text class="arch-lbl" x="162" y="196" text-anchor="start">cache miss</text>
+
+        <!-- nodes -->
+        <g class="hotspot" data-name="Browser (SPA)" data-note="The static single-page app — cache misses served by CloudFront. Holds the JWT in memory, signs in via Cognito, calls the API with the token, and uploads receipts straight to S3 with a presigned URL.">
+          <rect x="50" y="20" width="200" height="48" rx="10"/><text x="150" y="49" text-anchor="middle">🌐 Browser (SPA)</text>
+        </g>
+        <g class="hotspot" data-name="CloudFront" data-note="The HTTPS front door. Terminates TLS on the custom domain, caches static assets at the edge, and forwards cache misses to the S3 website origin. Ships an ACM certificate (sni-only, TLSv1.2_2021).">
+          <rect x="50" y="120" width="200" height="48" rx="10"/><text x="150" y="149" text-anchor="middle">⚡ CloudFront (HTTPS)</text>
+        </g>
+        <g class="hotspot" data-name="S3 — web bucket" data-note="Public bucket serving the three static files through the S3 website endpoint. It is CloudFront's origin — the cheapest possible static host.">
+          <rect x="50" y="220" width="200" height="48" rx="10"/><text x="150" y="249" text-anchor="middle">📦 S3 — web (static)</text>
+        </g>
+        <g class="hotspot" data-name="Cognito" data-note="User pool that stores accounts and issues signed JWTs. A PreSignUp Lambda auto-confirms users for the demo. Publishes public keys at /.well-known/jwks.json so API Gateway can verify tokens with no shared secret.">
+          <rect x="380" y="20" width="200" height="48" rx="10"/><text x="480" y="49" text-anchor="middle">🔐 Cognito (JWT)</text>
+        </g>
+        <g class="hotspot" data-name="API Gateway (HTTP API)" data-note="HTTP API with 8 routes. Its JWT authorizer verifies the Cognito token at the edge (signature, iss, aud, exp) before Lambda ever runs. Routes are AWS_PROXY integrations to the single router Lambda. ~70% cheaper than REST API.">
+          <rect x="380" y="140" width="200" height="48" rx="10"/><text x="480" y="169" text-anchor="middle">🚪 API Gateway (HTTP API)</text>
+        </g>
+        <g class="hotspot" data-name="Lambda — api" data-note="One router Lambda (Python 3.12) handling all routes. Reads the verified identity from event.requestContext.authorizer.jwt.claims.sub, validates input, and talks to DynamoDB and S3. Runs as a least-privilege IAM role.">
+          <rect x="380" y="260" width="200" height="48" rx="10"/><text x="480" y="289" text-anchor="middle">λ Lambda — api</text>
+        </g>
+        <g class="hotspot" data-name="DynamoDB" data-note="The expense records. Partition key userId (= Cognito sub), sort key expenseId, on-demand billing. Because userId is the partition key, a Query can only ever return one user's rows — that is the tenant boundary, enforced by the data model itself.">
+          <rect x="380" y="400" width="200" height="48" rx="10"/><text x="480" y="429" text-anchor="middle">🗄️ DynamoDB (expenses)</text>
+        </g>
+        <g class="hotspot" data-name="S3 — receipts bucket" data-note="A fully private bucket (public access blocked, AES256 at rest). Receipts are put here directly by the browser via a 5-minute presigned PUT. An ObjectCreated event on the receipts/ prefix invokes the OCR Lambda.">
+          <rect x="710" y="20" width="200" height="48" rx="10"/><text x="810" y="49" text-anchor="middle">📥 S3 — receipts (private)</text>
+        </g>
+        <g class="hotspot" data-name="Lambda — ocr" data-note="Second Lambda (ocr.handler) triggered by S3 events. Reads the image, calls Bedrock, normalises the fields, and UpdateItems the expense row — flipping status from pending to processed / needs_review. Any failure marks needs_review rather than losing data.">
+          <rect x="710" y="260" width="200" height="48" rx="10"/><text x="810" y="289" text-anchor="middle">λ Lambda — ocr</text>
+        </g>
+        <g class="hotspot" data-name="Bedrock (Nova Lite vision)" data-note="Amazon Nova Lite with vision, via the eu.* inference profile so the image stays in the EU. Returns structured JSON: vendor, date, total, currency, category, confidence. About a tenth of a cent per receipt.">
+          <rect x="710" y="400" width="200" height="48" rx="10"/><text x="810" y="429" text-anchor="middle">🤖 Bedrock (Nova Lite)</text>
+        </g>
+        <g class="hotspot" data-name="CloudWatch" data-note="Logs from both Lambdas. This is where we diagnosed the concurrency 503s (load test) and every handler bug — the single most useful debugging tool in the stack.">
+          <rect x="50" y="400" width="200" height="48" rx="10"/><text x="150" y="429" text-anchor="middle">📊 CloudWatch (logs)</text>
+        </g>
+      </svg>
+      <div class="diagram-note"><b>Tip:</b> click any box above to read what it does in this project.</div>
+    </figure>
+
+    <h2>3 · The components — one job each</h2>
+    <div class="tblwrap">
+      <table>
+        <tr><th>Piece</th><th>Its <em>one</em> job</th><th>Interview analogy</th></tr>
+        <tr><td><strong>S3 (web bucket)</strong></td><td>serves 3 static files</td><td>the shop window</td></tr>
+        <tr><td><strong>CloudFront</strong></td><td>HTTPS + caching in front of S3</td><td>the front door + doorman</td></tr>
+        <tr><td><strong>Cognito</strong></td><td>proves <em>who</em> you are</td><td>passport office</td></tr>
+        <tr><td><strong>API Gateway</strong></td><td>front door <strong>+ bouncer</strong> (verifies JWT)</td><td>reception desk</td></tr>
+        <tr><td><strong>Lambda</strong></td><td>the business logic</td><td>the clerk</td></tr>
+        <tr><td><strong>IAM role</strong></td><td>what the clerk may touch</td><td>the clerk's ID badge</td></tr>
+        <tr><td><strong>DynamoDB</strong></td><td>keeps the expense records</td><td>the filing cabinet</td></tr>
+        <tr><td><strong>S3 (receipts)</strong></td><td>keeps the attachments (private)</td><td>locked storeroom</td></tr>
+        <tr><td><strong>Bedrock</strong></td><td>reads a photo of a bill</td><td>a clerk who reads photos</td></tr>
+        <tr><td><strong>CloudWatch</strong></td><td>the diary of everything</td><td>CCTV + logbook</td></tr>
+        <tr><td><strong>Route 53 + ACM</strong></td><td>the name + the padlock</td><td>street address + seal</td></tr>
+      </table>
+    </div>
+
+    <h2>4 · Two lifecycles — and why they are different</h2>
+    <p>This is the single most important idea in the project. Step through both.</p>
+
+    <h3>Path A — synchronous CRUD ("add an expense")</h3>
+    <p>The user <strong>waits</strong>, so it must be fast and predictable.</p>
+    <figure class="seq">
+      <figcaption>Add an expense — synchronous request</figcaption>
+      <script type="application/json">
+      {"actors":["Browser","API Gateway","Lambda (api)","DynamoDB"],
+       "steps":[
+        {"f":0,"t":1,"m":"POST /expenses  +  JWT","note":"The browser calls the API with the Cognito IdToken in the Authorization header."},
+        {"f":1,"t":1,"self":true,"m":"verify JWT (JWKS)","note":"API Gateway verifies signature + iss + aud + exp using Cognito's cached public keys. No call to Cognito per request, no shared secret. ❌ invalid → 401 and Lambda never runs."},
+        {"f":1,"t":2,"m":"invoke(event)","note":"Only after verification. The event carries requestContext.authorizer.jwt.claims — a <b>trusted</b> identity."},
+        {"f":2,"t":2,"self":true,"m":"userId = claims.sub","note":"The Lambda reads identity from the <b>verified claims</b>, never from the request body. This one line is the whole tenant-isolation guarantee."},
+        {"f":2,"t":3,"m":"PutItem","note":"Writes {userId: sub, expenseId: uuid, amount, category, …}. userId is the partition key."},
+        {"f":3,"t":2,"m":"item saved","ret":true,"note":"DynamoDB confirms the write."},
+        {"f":2,"t":1,"m":"201 {item}","ret":true,"note":"Lambda returns the standard proxy response: {statusCode, headers, body}."},
+        {"f":1,"t":0,"m":"200 OK","ret":true,"note":"The browser re-renders. Total time: tens of milliseconds."}
+       ]}
+      </script>
+    </figure>
+
+    <h3>Path B — asynchronous OCR ("scan a receipt")</h3>
+    <p>An AI vision call is <strong>slow</strong> and <strong>can fail</strong>. Watch <em>exactly</em> where the
+      user's request ends — that's the whole design.</p>
+    <figure class="seq">
+      <figcaption>Scan a receipt — asynchronous, event-driven</figcaption>
+      <script type="application/json">
+      {"actors":["Browser","Lambda (api)","S3 receipts","Lambda (ocr)","Bedrock","DynamoDB"],
+       "steps":[
+        {"f":0,"t":1,"m":"POST /expenses/scan","note":"Starts a scan. This is the only user-facing API call of the flow."},
+        {"f":1,"t":5,"m":"PutItem {status: pending}","note":"Creates the expense row immediately — no amount yet — so the UI can show it right away."},
+        {"f":1,"t":1,"self":true,"m":"presign PUT (300s)","note":"Signs a one-object, 5-minute permission slip so the browser can upload straight to the private bucket."},
+        {"f":1,"t":0,"m":"{expenseId, uploadUrl}","ret":true,"note":"The API's job is now done — the user's request will finish at the next step."},
+        {"f":0,"t":2,"m":"PUT image → S3","note":"The file goes browser→S3 <b>directly</b>; it never passes through Lambda. ⏹ <b>The user's request is over here.</b>"},
+        {"f":2,"t":3,"m":"ObjectCreated → invoke","note":"An S3 event notification on the receipts/ prefix asynchronously invokes the OCR Lambda. Fully decoupled — a slow AI call can't stall the user."},
+        {"f":3,"t":4,"m":"converse(image)","note":"Bedrock Nova Lite (eu.* profile) reads the bill and returns JSON. The EU prefix keeps the image inside the EU."},
+        {"f":4,"t":3,"m":"JSON {vendor,total,…}","ret":true,"note":"Structured fields, not free text — the prompt demands compact JSON."},
+        {"f":3,"t":5,"m":"UpdateItem {status: processed}","note":"The OCR Lambda fills the row in. No amount / low confidence / any error → needs_review instead."},
+        {"f":0,"t":1,"m":"GET /expenses (poll 2s)","note":"Meanwhile the browser polls — up to 15 times, every 2 seconds. A deliberately simple status poll."},
+        {"f":1,"t":5,"m":"Query(userId=sub)","note":"A Query by partition key — cheap and tenant-safe."},
+        {"f":1,"t":0,"m":"200 {items}","ret":true,"note":"The row is now status: processed, so the UI shows vendor + amount. 🎉"}
+       ]}
+      </script>
+    </figure>
+
+    <div class="callout key">
+      <h4>🔑 The insight to remember</h4>
+      <p>In Path B, the <strong>user's request finishes after the S3 upload</strong>, <em>before</em> the AI ever runs.
+      The AI work is decoupled behind an S3 event, so it can take seconds, retry, or fail — and the user's
+      experience never breaks. That's the difference between a demo and an architecture.</p>
+    </div>
+
+    <h2>5 · Why these choices — the trade-off table you must own</h2>
+    <p>Every design question is really "why this and not that". Open each one:</p>
+    <div class="compare">
+      <details class="cmp"><summary>Serverless (Lambda + managed services) — why not EC2 / containers?</summary>
+        <p class="why"><strong>We chose it because:</strong> no idle cost (pay per request), no servers to patch,
+        scales to zero and to spikes automatically, and managed HA comes for free.
+        <span class="no">The alternative — EC2/ECS — means paying 24/7 for an idle box, patching an OS, and
+        building your own scaling and health checks.</span></p></details>
+      <details class="cmp"><summary>DynamoDB — why not RDS / Aurora?</summary>
+        <p class="why"><strong>We chose it because:</strong> on-demand pricing (no idle cost), single-digit-ms
+        lookups at any scale, and the partition key doubles as the tenant boundary.
+        <span class="no">RDS/Aurora would bill hourly even when idle and add connection-management complexity.
+        The price we pay: no joins, no SQL, and our /summary does a read-then-aggregate instead of a GROUP BY.</span></p></details>
+      <details class="cmp"><summary>HTTP API — why not REST API?</summary>
+        <p class="why"><strong>We chose it because:</strong> ~70% cheaper and it has a <em>native</em> JWT authorizer —
+        exactly what we need. <span class="no">REST API has more features (API keys, request validators, WAF integration,
+        usage plans) that we simply don't use, at a higher price.</span></p></details>
+      <details class="cmp"><summary>CloudFront — why not serve S3 directly?</summary>
+        <p class="why"><strong>We chose it because:</strong> the S3 website endpoint is <strong>HTTP only</strong> (browsers
+        warn "Not secure"), so CloudFront gives us real HTTPS/TLS, a custom domain with an ACM cert, edge caching,
+        compression, HTTP/2, and it hides the bucket. <span class="no">Serving the raw S3 website is insecure and unbranded.</span></p></details>
+      <details class="cmp"><summary>Bedrock (Nova Lite) — why not Textract or Rekognition?</summary>
+        <p class="why"><strong>We chose Bedrock because:</strong> one call returns <em>structured JSON</em> and it has an
+        <strong>EU inference profile</strong> (respecting our data-residency principle).
+        <span class="no">Textract <code>AnalyzeExpense</code> is the purpose-built service but is
+        <strong>gated on this account</strong>; Rekognition <code>DetectText</code> works but returns raw text only —
+        we'd own all the parsing.</span></p></details>
+      <details class="cmp"><summary>Route 53 + ACM — why not just the *.cloudfront.net URL?</summary>
+        <p class="why"><strong>We added it because:</strong> a real product needs a real name and a padlock on
+        <em>your</em> domain. <span class="no">The default CloudFront domain works, but it isn't a product name —
+        and it can't do apex/root records, which a portfolio piece should show you understand.</span></p></details>
+    </div>
+
+    <h2>6 · The four principles that tie it together</h2>
+    <ol>
+      <li><strong>EU data residency</strong> — everything in <code>eu-central-1</code>; the Bedrock <code>eu.</code>
+        inference profile keeps the image in the EU. (Decision D1.)</li>
+      <li><strong>Least privilege</strong> — each Lambda runs as a role that can touch <em>only</em> what it needs.</li>
+      <li><strong>Tenant isolation</strong> — identity comes from the <strong>verified JWT <code>sub</code></strong>,
+        <em>never</em> the request body; it's the partition key.</li>
+      <li><strong>No idle cost</strong> — nothing runs (or bills) when nobody is using it.</li>
+    </ol>
+
+    <h2>7 · Do this now (2 minutes, hands-on)</h2>
+    <div class="callout tip">
+      <h4>🔬 Prove it on the live system</h4>
+      <p>Open <a href="../../" target="_blank" rel="noopener">the live app</a>, press <code>F12</code> →
+      <strong>Network</strong>, and sign in with <code>demo.cijo@example.com</code> / <code>Testpass1</code>. Watch for:</p>
+      <ul>
+        <li>a call to <code>cognito-idp.eu-central-1.amazonaws.com</code> → the JWT being minted;</li>
+        <li>calls to <code>4haajttqgh.execute-api…</code> with an <code>authorization</code> header → the JWT presented;</li>
+        <li>click <strong>📷 Scan a receipt</strong>, pick a photo, and watch the <em>pending</em> row flip to <em>processed</em>.</li>
+      </ul>
+    </div>
+
+    <h2 id="quiz-h">8 · 🧠 Quiz — 15 deep questions</h2>
+    <p class="muted">Answer from memory first, then reveal and grade yourself honestly. Your score saves automatically.</p>
+
+    <section class="quiz">
+      <div class="quizbar">
+        <span class="score">Graded 0 / 15 · Score 0 / 15</span>
+        <div class="pbar"><span></span></div>
+        <button class="reset" type="button">Reset</button>
+      </div>
+      <ol class="qlist">
+
+        <li class="q">
+          <p class="qtext">Give the <strong>90-second pitch</strong> of the project from memory — no notes. (Record yourself; does it name every service and give a reason?)</p>
+          <button class="reveal" type="button">Reveal model answer</button>
+          <div class="answer"><p>Use the script in §1. The beats: <b>serverless expense tracker</b> → <b>static SPA on S3 behind CloudFront (HTTPS, custom domain)</b> → <b>Cognito issues JWTs</b> → <b>API Gateway verifies the token at the edge</b> → <b>one router Lambda</b> → <b>DynamoDB keyed by the Cognito sub (tenant isolation)</b> → <b>receipts go browser→S3 via presigned URLs</b> → <b>an S3 event triggers an OCR Lambda that uses Bedrock vision, asynchronously</b> → <b>CloudFormation + tests + CI</b> → <b>EU, ~free at rest</b>.</p></div>
+          <div class="grade"><button data-g="got">✅ Got it</button><button data-g="part">🟡 Partial</button><button data-g="miss">❌ Missed</button></div>
+        </li>
+
+        <li class="q">
+          <p class="qtext">Trace the <strong>exact path of the bytes</strong> for "add an expense" — name every service the request touches, in order.</p>
+          <button class="reveal" type="button">Reveal model answer</button>
+          <div class="answer"><p>Browser (holds the JWT from an earlier Cognito sign-in) → <b>API Gateway</b> (verifies the JWT signature + iss/aud/exp using Cognito's cached JWKS) → <b>Lambda</b> (router matches <code>POST /expenses</code>, sets <code>userId = claims.sub</code>, validates) → <b>DynamoDB</b> (<code>PutItem</code>) → response back up the chain as <code>{statusCode, headers, body}</code> → browser re-renders. Note the static assets themselves came from <b>CloudFront → S3</b>, not from the API.</p></div>
+          <div class="grade"><button data-g="got">✅ Got it</button><button data-g="part">🟡 Partial</button><button data-g="miss">❌ Missed</button></div>
+        </li>
+
+        <li class="q">
+          <p class="qtext">Now trace the <strong>OCR path</strong>. At which exact point does the <strong>user's request finish</strong>, and why does that matter?</p>
+          <button class="reveal" type="button">Reveal model answer</button>
+          <div class="answer"><p>POST <code>/expenses/scan</code> creates a <code>pending</code> row and returns a presigned PUT URL; the browser then <b>PUTs the image straight to S3</b>. <b style="color:#a5f3fc">The user's request finishes when that upload succeeds</b> — before the AI runs. S3's <code>ObjectCreated</code> event then invokes the OCR Lambda asynchronously; Bedrock reads the image and the Lambda <code>UpdateItem</code>s the row to <code>processed</code>/<code>needs_review</code>; the browser polls <code>GET /expenses</code> to see it. <b>Why it matters:</b> a slow, fallible AI call is decoupled from the user's experience — the UI is instant and the AI step can retry or fail without blocking anyone.</p></div>
+          <div class="grade"><button data-g="got">✅ Got it</button><button data-g="part">🟡 Partial</button><button data-g="miss">❌ Missed</button></div>
+        </li>
+
+        <li class="q">
+          <p class="qtext">Name <strong>all the AWS services</strong> used, and give each a <strong>one-line job</strong>.</p>
+          <button class="reveal" type="button">Reveal model answer</button>
+          <div class="answer"><p><b>CloudFront</b> HTTPS/caching front door · <b>S3</b> static hosting + private receipts · <b>Cognito</b> accounts/JWTs · <b>API Gateway (HTTP API)</b> routes + JWT authorizer · <b>Lambda</b> business logic (api + ocr + autoconfirm) · <b>DynamoDB</b> expense records · <b>IAM</b> least-privilege roles · <b>Bedrock</b> receipt vision · <b>Route 53</b> DNS · <b>ACM</b> TLS certificate · <b>CloudWatch</b> logs. (Also <b>CloudFormation</b> as IaC, though that's tooling rather than a runtime service.)</p></div>
+          <div class="grade"><button data-g="got">✅ Got it</button><button data-g="part">🟡 Partial</button><button data-g="miss">❌ Missed</button></div>
+        </li>
+
+        <li class="q">
+          <p class="qtext">Why <strong>serverless</strong> over EC2/containers? Give <strong>three distinct</strong> reasons (not three versions of the same one).</p>
+          <button class="reveal" type="button">Reveal model answer</button>
+          <div class="answer"><p>Any three of: <b>(1) cost model</b> — pay per request, zero idle cost; <b>(2) no ops</b> — no OS patching, no capacity planning, no servers to secure; <b>(3) elasticity</b> — scales from zero to spikes automatically, including down to zero; <b>(4) managed HA/fault tolerance</b> across AZs for free; <b>(5) faster delivery</b> — you assemble managed services instead of building infrastructure; <b>(6) security surface</b> — each function gets its own minimal IAM role.</p></div>
+          <div class="grade"><button data-g="got">✅ Got it</button><button data-g="part">🟡 Partial</button><button data-g="miss">❌ Missed</button></div>
+        </li>
+
+        <li class="q">
+          <p class="qtext">Why <strong>DynamoDB</strong> and not <strong>RDS/Aurora</strong>? What capability do you <strong>give up</strong>?</p>
+          <button class="reveal" type="button">Reveal model answer</button>
+          <div class="answer"><p><b>Why:</b> on-demand (no idle cost), single-digit-ms at any scale, no connection pooling to manage, and the partition key itself enforces tenant isolation. <b>What we give up:</b> joins and multi-table transactions, ad-hoc SQL/analytics, and flexible secondary indexing. Concretely, our <code>/summary</code> reads all of a user's items and aggregates in Lambda — fine for one user, but a relational <code>GROUP BY</code> would be simpler and cheaper at large scale.</p></div>
+          <div class="grade"><button data-g="got">✅ Got it</button><button data-g="part">🟡 Partial</button><button data-g="miss">❌ Missed</button></div>
+        </li>
+
+        <li class="q">
+          <p class="qtext">Why is <strong>CloudFront</strong> in front of the web bucket? Give <strong>two different</strong> reasons.</p>
+          <button class="reveal" type="button">Reveal model answer</button>
+          <div class="answer"><p><b>(1) Security / trust:</b> the S3 <em>website</em> endpoint is HTTP-only — browsers flag it "Not secure". CloudFront terminates TLS, so we get HTTPS + a padlock + a real custom domain (ACM cert). <b>(2) Performance/cost:</b> it caches the static assets at edge locations nearest the user, compresses them, speaks HTTP/2, and absorbs load/DDoS — so S3 sees far fewer requests. Extras: it hides the origin bucket, and gives custom error pages.</p></div>
+          <div class="grade"><button data-g="got">✅ Got it</button><button data-g="part">🟡 Partial</button><button data-g="miss">❌ Missed</button></div>
+        </li>
+
+        <li class="q">
+          <p class="qtext">Our CloudFront origin is the <strong>S3 website endpoint over HTTP</strong>, not an <strong>Origin Access Control (OAC)</strong> bucket. What's the trade-off, and what would you change for production?</p>
+          <button class="reveal" type="button">Reveal model answer</button>
+          <div class="answer"><p><b>Trade-off:</b> the website endpoint requires the bucket to be <b>publicly readable</b>, so anyone who learns the bucket URL can <b>bypass CloudFront</b> entirely (skip caching, bypass any CloudFront-layer rules, and see the bucket directly). The CloudFront→origin hop is plain HTTP (though it stays inside AWS). <b>Production fix:</b> switch the origin to the S3 <b>REST</b> endpoint with an <b>OAC</b>, keep the bucket fully private, and add a bucket policy that allows only this distribution. Bonus: add a CloudFront Function for SPA routing and a WAF.</p></div>
+          <div class="grade"><button data-g="got">✅ Got it</button><button data-g="part">🟡 Partial</button><button data-g="miss">❌ Missed</button></div>
+        </li>
+
+        <li class="q">
+          <p class="qtext">Where does the user's <strong>identity</strong> come from, and why is that the <strong>security backbone</strong> of the app? What breaks if you trusted a <code>userId</code> from the request body?</p>
+          <button class="reveal" type="button">Reveal model answer</button>
+          <div class="answer"><p>Identity comes from <code>event.requestContext.authorizer.jwt.claims.sub</code> — the <b>verified</b> <code>sub</code> of the Cognito JWT, injected by API Gateway's authorizer after it checks the signature. <b>Why it's the backbone:</b> <code>userId</code> is the DynamoDB <b>partition key</b>, so <code>Query(userId == sub)</code> can only ever return the caller's rows. <b>If we trusted the body:</b> any signed-in user could send someone else's <code>userId</code> and read/modify/delete their expenses — a classic <b>IDOR / broken object-level authorization</b> bug. Because we never read identity from user input, that class of bug is impossible by construction.</p></div>
+          <div class="grade"><button data-g="got">✅ Got it</button><button data-g="part">🟡 Partial</button><button data-g="miss">❌ Missed</button></div>
+        </li>
+
+        <li class="q">
+          <p class="qtext">Why is the system <strong>"no idle cost"</strong>? Name a service choice that <em>would</em> have introduced idle cost, and why we avoided it.</p>
+          <button class="reveal" type="button">Reveal model answer</button>
+          <div class="answer"><p>Every runtime service is <b>pay-per-use or storage-only</b>: Lambda (per request/GB-s), API Gateway (per request), DynamoDB on-demand (per read/write), S3 (per GB + request), Cognito (per MAU), CloudFront (per request/GB). Nothing runs when idle. <b>Idle-cost traps we avoided:</b> RDS/Aurora (bills hourly even with zero traffic), EC2/ECS/ALB (always-on), a NAT Gateway (~$32+/mo just to exist), or ElastiCache. The one standing cost is the <b>Route 53 hosted zone ($0.50/mo)</b>, which is a fixed DNS fee, not compute.</p></div>
+          <div class="grade"><button data-g="got">✅ Got it</button><button data-g="part">🟡 Partial</button><button data-g="miss">❌ Missed</button></div>
+        </li>
+
+        <li class="q">
+          <p class="qtext">The app runs in <strong>eu-central-1</strong>, but the <strong>ACM certificate had to be in us-east-1</strong>. Explain why, and how that didn't violate your EU-residency principle.</p>
+          <button class="reveal" type="button">Reveal model answer</button>
+          <div class="answer"><p><b>Why us-east-1:</b> CloudFront is a <b>global</b> service and AWS only accepts ACM certificates from <b>us-east-1 (N. Virginia)</b> for it — a hard platform requirement (regional services like ALB use a cert in their own region instead). <b>Why residency is intact:</b> a TLS <b>certificate is public material</b> — public key and domain names — it contains and processes <b>no user data</b>. All user data, compute and the Bedrock inference stay in <code>eu-central-1</code>. So the EU-residency principle (which is about <em>data</em>) is unbroken.</p></div>
+          <div class="grade"><button data-g="got">✅ Got it</button><button data-g="part">🟡 Partial</button><button data-g="miss">❌ Missed</button></div>
+        </li>
+
+        <li class="q">
+          <p class="qtext">We have <strong>two data stores</strong> (DynamoDB and S3). Why two, and what rule decides <em>which</em> piece of data goes where?</p>
+          <button class="reveal" type="button">Reveal model answer</button>
+          <div class="answer"><p><b>DynamoDB</b> holds the structured, queryable, tenant-scoped <b>records</b> we need to filter/sort/aggregate (expenses). <b>S3</b> holds the large <b>binary objects</b> (receipt images up to 5 MB) that don't belong inside a database row and are better served by presigned URLs. <b>The rule:</b> small structured data you query → DynamoDB; large unstructured blobs you store/serve → S3. And we keep only a <b>reference</b> (<code>receiptKey</code>) in DynamoDB — the pointer, not the bytes.</p></div>
+          <div class="grade"><button data-g="got">✅ Got it</button><button data-g="part">🟡 Partial</button><button data-g="miss">❌ Missed</button></div>
+        </li>
+
+        <li class="q">
+          <p class="qtext">What is the <strong>single most important design decision</strong> in this architecture, and why?</p>
+          <button class="reveal" type="button">Reveal model answer</button>
+          <div class="answer"><p>There's no single "correct" answer — an interviewer wants a <b>defensible pick with reasoning</b>. Strong answer: <b>deriving identity from the verified JWT and making it the partition key</b>, because it collapses <em>security</em> (no IDOR possible) and <em>data access</em> (fast, single-partition Query) into one decision. Equally defensible: <b>going fully serverless</b> (the cost/ops model), or <b>decoupling the AI step behind an S3 event</b> (resilience). Name your pick, then justify the trade-off you accepted.</p></div>
+          <div class="grade"><button data-g="got">✅ Got it</button><button data-g="part">🟡 Partial</button><button data-g="miss">❌ Missed</button></div>
+        </li>
+
+        <li class="q">
+          <p class="qtext">If traffic grew <strong>1000×</strong>, what breaks <strong>first</strong>, and why? <span class="muted">(Hint: a single Lambda's limits, and a single partition key.)</span></p>
+          <button class="reveal" type="button">Reveal model answer</button>
+          <div class="answer"><p><b>Lambda account concurrency</b> first — the default is <b>1000 concurrent executions</b> per region, and we literally hit throttling (our load test produced <b>503s</b>). Next, for OCR, <b>Bedrock on-demand throughput quotas</b> (tokens/requests per minute) would throttle the async pipeline. Also risk: a single user's <b>hot partition</b> (DynamoDB per-partition limits) if one account writes very fast. Fixes: request a concurrency increase, add <b>reserved/provisioned concurrency</b>, use SQS between S3 and the OCR Lambda to smooth and retry, and consider write sharding for hot tenants.</p></div>
+          <div class="grade"><button data-g="got">✅ Got it</button><button data-g="part">🟡 Partial</button><button data-g="miss">❌ Missed</button></div>
+        </li>
+
+        <li class="q">
+          <p class="qtext">What is your <strong>"phase 2"</strong>, and why did you <em>deliberately defer</em> it?</p>
+          <button class="reveal" type="button">Reveal model answer</button>
+          <div class="answer"><p>Phase 2 (from the README): budgets/targets, Cognito groups for RBAC, monitoring alarms + X-Ray, rate limiting / WAF, a real <code>deploy</code> job in CI, and push/WebSocket instead of polling. <b>Why defer:</b> each is an independent enhancement that adds surface area without changing the core story — and an unfinished pile of half-features is worse than a small, complete, well-understood system. Deferring them (and <em>knowing why</em>) demonstrates scope discipline, which is itself an engineering signal.</p></div>
+          <div class="grade"><button data-g="got">✅ Got it</button><button data-g="part">🟡 Partial</button><button data-g="miss">❌ Missed</button></div>
+        </li>
+
+      </ol>
+    </section>
+
+    <div class="callout key">
+      <h4>➡️ Next</h4>
+      <p><strong>Module 2 — Cognito &amp; the JWT</strong>: how sign-in really works, what's inside a token,
+      and how API Gateway verifies it with <em>no</em> shared secret.</p>
+    </div>
+
+  </article>
+
+  <div class="pager" id="pager"></div>
+</div>
+
+</body>
+</html>

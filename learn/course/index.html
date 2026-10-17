@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Expense Tracker — the interactive course</title>
+<link rel="stylesheet" href="course.css" />
+<script src="course.js" defer></script>
+</head>
+<body data-page="home">
+
+<div class="topbar">
+  <a class="brand" href="./"><span class="logo">🎓</span> Expense Tracker · Course</a>
+  <span class="crumb" id="gstat"></span>
+  <div class="spacer"></div>
+  <div class="globar" title="course progress"><span id="gbar"></span></div>
+  <a class="btn" href="../">Learning site</a>
+  <a class="btn" href="../expense-tracker-guide.pdf">⬇ PDF</a>
+  <a class="btn" href="../../">Live app</a>
+</div>
+
+<div class="wrap">
+  <header class="hero">
+    <h1>Understand every service — then explain it yourself</h1>
+    <p class="lede">
+      A hands-on course built from the <strong>real</strong> Expense Tracker: the actual
+      <code>handler.py</code>, <code>ocr.py</code>, <code>template.yaml</code> and live
+      infrastructure. Each module teaches one part, shows an <em>interactive diagram</em>,
+      then quizzes you with hard questions — <em>how we used it, why we chose it, what the
+      alternatives were, and what we'd change</em>.
+    </p>
+    <div class="stats">
+      <div class="stat"><b>18</b><span>modules</span></div>
+      <div class="stat"><b>11</b><span>AWS services</span></div>
+      <div class="stat"><b>~200</b><span>deep questions</span></div>
+      <div class="stat"><b>100%</b><span>your own code</span></div>
+    </div>
+  </header>
+
+  <section class="how">
+    <h2>How each module works</h2>
+    <ol>
+      <li><strong>Learn</strong> — the mental model, the <em>why</em>, the trade-offs and the failure modes.</li>
+      <li><strong>See</strong> — an interactive diagram: step through a real request, or click a service.</li>
+      <li><strong>Quiz</strong> — 10–15 deep questions. Reveal the model answer, grade yourself honestly; your score is saved in this browser.</li>
+    </ol>
+    <p class="muted" style="margin:.6em 0 0">Progress is stored locally — nothing is sent anywhere.</p>
+  </section>
+
+  <h2 style="font-size:20px;margin:30px 0 0">🗺️ The course map</h2>
+  <div class="modgrid" id="modgrid"></div>
+
+  <p class="muted" style="margin-top:30px;font-size:13px">
+    Prefer the linear build log? → <a href="../">the learning site</a>. · The raw source is in
+    <code>docs/</code> and <code>learn/course/</code> in the repo.
+  </p>
+</div>
+
+</body>
+</html>
