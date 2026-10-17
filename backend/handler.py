@@ -111,6 +111,39 @@ def create_expense(event):
     return _response(201, item)
 
 
+def scan_expense(event):
+    """POST /expenses/scan — start a receipt-scan.
+
+    Creates a *pending* expense (no amount yet) and returns a presigned S3 PUT
+    URL. The browser uploads the image straight to S3; the `ObjectCreated` event
+    triggers the OCR Lambda, which fills the row in and flips the status to
+    `processed` (or `needs_review`). The client polls GET /expenses to watch it.
+    """
+    user_id = _user_id(event)
+    expense_id = str(uuid.uuid4())
+    key = f"receipts/{user_id}/{expense_id}"
+
+    item = {
+        "userId": user_id,
+        "expenseId": expense_id,
+        "currency": "EUR",
+        "category": "other",
+        "date": datetime.now(timezone.utc).date().isoformat(),
+        "note": "",
+        "status": "pending",
+        "receiptKey": key,
+        "createdAt": _now(),
+    }
+    table.put_item(Item=item)
+
+    url = s3.generate_presigned_url(
+        "put_object",
+        Params={"Bucket": BUCKET_NAME, "Key": key},
+        ExpiresIn=300,
+    )
+    return _response(201, {"expenseId": expense_id, "uploadUrl": url, "receiptKey": key})
+
+
 def delete_expense(event):
     user_id = _user_id(event)
     expense_id = (event.get("pathParameters") or {}).get("id")
@@ -267,6 +300,7 @@ def summary(event):
 ROUTES = [
     ("GET", re.compile(r"^/expenses$"), list_expenses),
     ("POST", re.compile(r"^/expenses$"), create_expense),
+    ("POST", re.compile(r"^/expenses/scan$"), scan_expense),
     ("DELETE", re.compile(r"^/expenses/(?P<id>[^/]+)$"), delete_expense),
     ("PUT", re.compile(r"^/expenses/(?P<id>[^/]+)$"), update_expense),
     ("POST", re.compile(r"^/expenses/(?P<id>[^/]+)/receipt-url$"), create_receipt_url),

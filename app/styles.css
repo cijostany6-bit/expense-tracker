@@ -223,3 +223,8 @@ code{background:rgba(34,211,238,.12);color:#a5f3fc;padding:1px 6px;border-radius
 .modal h3{margin:0 0 16px}
 .modal .row{margin-top:18px;justify-content:flex-end}
 .modal img{max-width:100%;border-radius:12px;border:1px solid var(--line)}
+
+/* ── receipt scan (V3) ── */
+.scan-hint{margin:-2px 0 14px;font-size:13px;line-height:1.5}
+.item.is-pending{opacity:.75}
+.scan-hint b{color:var(--primary-2)}

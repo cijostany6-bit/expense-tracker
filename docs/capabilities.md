@@ -21,8 +21,9 @@ that makes it happen. Use this as your "what did you build?" script.
 | 10 | **KPI dashboard** | Total · count · average · top category | Derived from the filtered data, animated counters |
 | 11 | **Upload a receipt** | 📎 pick an image/PDF (≤5 MB) | `POST /expenses/{id}/receipt-url` → **presigned S3 PUT** from the browser |
 | 12 | **View a receipt** | 📎 view → image in a modal | `GET /expenses/{id}/receipt-url` → **presigned S3 GET** |
-| 13 | **Export to CSV** | ⬇ CSV button | Client-side blob, no server |
-| 14 | **Keyboard-friendly** | `/` search · `Esc` close · `Enter` sign in | Plain JS listeners |
+| 13 | **📷 Scan a receipt** | upload a photo of a bill → the expense fills itself in | `POST /expenses/scan` → **S3 event** → **Bedrock vision** → DynamoDB; the UI polls and renders the result |
+| 14 | **Export to CSV** | ⬇ CSV button | Client-side blob, no server |
+| 15 | **Keyboard-friendly** | `/` search · `Esc` close · `Enter` sign in | Plain JS listeners |
 
 ## 🔧 Technical capabilities (what you can defend in an interview)
 
@@ -33,11 +34,13 @@ that makes it happen. Use this as your "what did you build?" script.
 | **Least-privilege IAM** | The role can only touch 5 DynamoDB actions on one table + 3 S3 actions on one bucket prefix |
 | **Private object storage** | The receipts bucket has *all* public access blocked; access is only via time-limited signed URLs |
 | **Encryption at rest** | SSE-S3 (AES256) on the receipts bucket |
-| **RESTful API** | 7 endpoints, proper verbs and status codes (200/201/400/401/404/500) |
+| **RESTful API** | 8 endpoints, proper verbs and status codes (200/201/400/401/404/500) |
 | **Serverless / pay-per-use** | Zero idle cost; scales automatically with traffic |
 | **Observability** | Every invocation logged to CloudWatch Logs; we debugged 3 real bugs from those logs |
-| **Data residency** | Everything in `eu-central-1` (Frankfurt) — GDPR-friendly |
-| **No build step** | 3 static files, vanilla JS; deploys with `aws s3 cp` |
+| **AI, defensively** | Receipt OCR uses **Bedrock** behind a `pending → processed \| needs_review` state machine — a bad extraction degrades gracefully instead of corrupting data |
+| **Event-driven design** | S3 `ObjectCreated` → OCR Lambda → Bedrock; the upload returns instantly and the pipeline runs async |
+| **Data residency** | Everything in `eu-central-1` (Frankfurt) — including the **`eu.*` Bedrock inference profile**, so receipt images stay in the EU |
+| **No build step** | 3 static files, vanilla JS; deploys with `scripts/deploy-web.sh` |
 
 ## 🔌 The API (all routes require a valid JWT)
 
@@ -45,6 +48,7 @@ that makes it happen. Use this as your "what did you build?" script.
 |---|---|---|---|
 | `GET` | `/expenses` | List **your** expenses | `200` |
 | `POST` | `/expenses` | Create an expense | `201` |
+| `POST` | `/expenses/scan` | Start a receipt scan (pending row + upload URL) | `201` |
 | `PUT` | `/expenses/{id}` | Update fields (partial) | `200` |
 | `DELETE` | `/expenses/{id}` | Delete an expense | `200` / `404` |
 | `POST` | `/expenses/{id}/receipt-url` | Presigned **upload** URL | `200` |
@@ -59,7 +63,7 @@ that makes it happen. Use this as your "what did you build?" script.
 | Multi-currency conversion | needs a rate source | cached FX rates + Lambda |
 | Budgets & alerts | would need scheduled jobs | **EventBridge Scheduler** + SNS |
 | Recurring expenses | domain complexity | DynamoDB streams / EventBridge |
-| Custom domain + ACM cert | next step | **ACM** cert + CloudFront alias (HTTPS itself is done) |
+| Multi-page PDF receipts | Nova Lite handles images, not PDFs | **Textract** `AnalyzeExpense` (once the account is unblocked) or rasterise PDF→image first |
 | Deploy CD (auto-deploy on merge) | next step | extend **GitHub Actions** with a deploy job |
 
 > Rule of thumb: a strong answer names what you *chose not to do* and why. That

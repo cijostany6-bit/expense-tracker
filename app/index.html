@@ -66,7 +66,11 @@
       </div>
 
       <div class="card">
-        <div class="card-head"><h3>Add an expense</h3></div>
+        <div class="card-head wrap-head">
+          <h3>Add an expense</h3>
+          <button id="btnScan" class="btn ghost small" type="button">📷 Scan a receipt</button>
+        </div>
+        <p class="muted scan-hint">Snap or upload a bill — <b>Amazon Bedrock</b> reads it and fills the fields in for you.</p>
         <form id="addForm" class="form-grid">
           <label class="field"><span>Amount</span>
             <input id="f-amount" type="number" step="0.01" min="0.01" placeholder="0.00" required />

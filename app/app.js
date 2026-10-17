@@ -145,7 +145,7 @@ function filtered() {
   const q = state.q.trim().toLowerCase();
   const out = state.expenses.filter((e) => {
     if (state.category !== "all" && (e.category || "other") !== state.category) return false;
-    if (q && !`${e.note || ""} ${e.category || ""}`.toLowerCase().includes(q)) return false;
+    if (q && !`${e.note || ""} ${e.category || ""} ${e.vendor || ""}`.toLowerCase().includes(q)) return false;
     return true;
   });
   const s = state.sort;
@@ -254,25 +254,40 @@ function renderList() {
 
   box.innerHTML = items.map((e) => {
     const c = catOf(e.category);
+    const status = e.status || "processed";
+    const pending = status === "pending";
+
     const receipt = e.receiptKey
       ? `<span class="receipt-chip" data-receipt="${esc(e.expenseId)}">📎 view receipt</span>`
       : `<span class="receipt-chip" data-upload="${esc(e.expenseId)}"
               style="background:rgba(56,189,248,.14);color:#38bdf8;border-color:rgba(56,189,248,.35)">＋ add receipt</span>`;
+
+    const statusChip = pending
+      ? `<span class="receipt-chip" style="background:rgba(250,204,21,.14);color:#facc15;border-color:rgba(250,204,21,.35)">⏳ reading receipt…</span>`
+      : status === "needs_review"
+        ? `<span class="receipt-chip" style="background:rgba(248,113,113,.14);color:#f87171;border-color:rgba(248,113,113,.35)">⚠️ needs review</span>`
+        : "";
+
+    const title = e.vendor
+      ? `${esc(e.vendor)}${e.note ? ` <span class="muted">— ${esc(e.note)}</span>` : ""}`
+      : (e.note ? esc(e.note) : `<span class="muted">no note</span>`);
+
     return `
-      <div class="item">
+      <div class="item${pending ? " is-pending" : ""}">
         <span class="cat-badge"
               style="background:rgba(${c.rgb},.18);border:1px solid rgba(${c.rgb},.45);color:${c.hex}">
           ${esc(e.category || "other")}
         </span>
         <div class="main">
-          <div class="note">${e.note ? esc(e.note) : `<span class="muted">no note</span>`}</div>
+          <div class="note">${title}</div>
           <div class="meta">
             <span>📅 ${esc(e.date || "")}</span>
             <span>💱 ${esc(e.currency || "")}</span>
+            ${statusChip}
             ${receipt}
           </div>
         </div>
-        <div class="amt">${money(e.amount, e.currency)}</div>
+        <div class="amt">${pending ? "…" : money(e.amount, e.currency)}</div>
         <div class="actions">
           <button class="icon-btn" data-edit="${esc(e.expenseId)}" title="Edit">✏️</button>
           <button class="icon-btn del" data-del="${esc(e.expenseId)}" title="Delete">🗑️</button>
@@ -393,6 +408,51 @@ async function uploadReceipt(id) {
   input.click();
 }
 
+/* ── scan a receipt: create a pending expense, upload, watch the AI fill it in ── */
+function scanReceipt() {
+  const input = document.createElement("input");
+  input.type = "file";
+  input.accept = "image/*";
+  input.onchange = async () => {
+    const file = input.files && input.files[0];
+    if (!file) return;
+    if (!file.type.startsWith("image/")) { toast("Please choose an image (JPG/PNG)", "bad"); return; }
+    if (file.size > 5 * 1024 * 1024) { toast("File must be under 5 MB", "bad"); return; }
+    try {
+      toast("Creating expense + upload URL…");
+      const { expenseId, uploadUrl } = await api("POST", "/expenses/scan");
+
+      const res = await fetch(uploadUrl, {
+        method: "PUT", body: file,
+        headers: { "Content-Type": file.type || "application/octet-stream" },
+      });
+      if (!res.ok) throw new Error(`Upload failed (${res.status})`);
+
+      toast("Reading your receipt… 🔎");
+      await load();               // the pending row appears immediately
+      pollScan(expenseId);
+    } catch (e) { toast(e.message, "bad"); }
+  };
+  input.click();
+}
+
+async function pollScan(expenseId) {
+  for (let i = 0; i < 15; i++) {
+    await new Promise((r) => setTimeout(r, 2000));
+    await load();
+    const e = state.expenses.find((x) => x.expenseId === expenseId);
+    if (e && e.status && e.status !== "pending") {
+      if (e.status === "processed") {
+        toast(`Got it: ${e.vendor || "expense"} · ${money(e.amount, e.currency)} ✔`, "ok");
+      } else {
+        toast("Couldn't read that receipt — please fill the details in ✏️", "bad");
+      }
+      return;
+    }
+  }
+  toast("Still reading — refresh in a moment", "");
+}
+
 async function previewReceipt(id) {
   try {
     const { downloadUrl } = await api("GET", `/expenses/${id}/receipt-url`);
@@ -471,6 +531,7 @@ function wire() {
   $("btnLogout").onclick = () => { showAuth(); toast("Signed out"); };
 
   $("addForm").onsubmit = addExpense;
+  $("btnScan").onclick = scanReceipt;
 
   $("fq").oninput        = (e) => { state.q = e.target.value; renderAll(); };
   $("filterCategory").onchange = (e) => { state.category = e.target.value; renderAll(); };

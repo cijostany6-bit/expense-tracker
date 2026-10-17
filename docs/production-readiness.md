@@ -14,7 +14,8 @@ built and the numbers it produced).
 | **API base** | https://4haajttqgh.execute-api.eu-central-1.amazonaws.com |
 | **Demo user** | `demo.cijo@example.com` / `Testpass1` |
 | **Region** | `eu-central-1` (Frankfurt) |
-| **Status** | HTTPS via CloudFront ✅ · IaC ✅ · tests + CI ✅ — see §2 |
+| **Status** | HTTPS via CloudFront ✅ · custom domain ✅ · receipt OCR ✅ · IaC ✅ · tests + CI ✅ — see §2 |
+| **Custom domain** | https://worldofvpc.online (live once DNS propagates — see [step 8](step-8-custom-domain.md)) |
 
 > Anyone with the URL can use the app; they can only ever see **their own**
 > expenses, because the partition key is their Cognito `sub`. Try it: sign up a
@@ -92,7 +93,8 @@ client removes."
 | **Load / performance** | `scripts/loadtest.py` (above) | ✅ done |
 | **Security — auth bypass** | call the API with no / a tampered / an expired token → expect `401`, and verify **Lambda never runs** in CloudWatch | ✅ done |
 | **Security — tenant isolation** | sign in user B, call with user A's token → only A's data | ✅ done |
-| **Unit / regression** | `pytest` + `moto` over every route (offline) | ✅ done (21 tests) |
+| **Unit / regression** | `pytest` + `moto` over every route (offline) | ✅ done (36 tests) |
+| **AI extraction — failure paths** | blurry/PDF image, low confidence, Bedrock error → row marked `needs_review` (never lost) | ✅ covered by `tests/test_ocr.py` |
 | **Input fuzzing** | send bad JSON, negative amounts, 10 MB notes, unicode, SQL/NoSQL-ish strings | 🟡 partial (bad amounts/JSON covered by unit tests) |
 | **Browser / device** | Chrome, Safari, Firefox, iOS Safari, small screens | ⬜ partial |
 | **Accessibility** | keyboard-only run, contrast, screen-reader labels, Lighthouse a11y score | ⬜ todo |
@@ -112,9 +114,12 @@ Ordered by *what a reviewer would notice first*, not by effort.
 |---|---|---|---|---|
 | P0-1 | **No HTTPS** (HTTP S3 website endpoint) | browsers warn, tokens/passwords travel in cleartext | **CloudFront** in front of the bucket (default `*.cloudfront.net` cert) | ✅ done |
 | P0-2 | **No infrastructure as code** | the whole stack was built by hand — nobody can reproduce or review it | **CloudFormation** template ([`infra/template.yaml`](../infra/template.yaml)) | ✅ done |
-| P0-3 | **No automated tests** | a refactor can silently break anything | **pytest + moto** — 21 offline unit tests ([`tests/`](../tests/)) | ✅ done |
+| P0-3 | **No automated tests** | a refactor can silently break anything | **pytest + moto** — 36 offline unit tests ([`tests/`](../tests/)) | ✅ done |
 | P0-4 | **No CI/CD** | deploys are manual `aws` commands run from one laptop | **GitHub Actions**: install deps → run tests on every push | ✅ CI done (deploy CD deferred) |
 | P0-5 | **Lambda concurrency limit = 10** | load testing proved we 503 under modest traffic | request a quota increase (free) + set **reserved concurrency** deliberately | ⬜ open (AWS support ticket) |
+| P0-6 | **OCR has no per-user rate limit** | a user could spam scans → Bedrock spend | per-user quota (a DynamoDB counter) + API Gateway throttling | ⬜ open |
+| P0-7 | **No DLQ for failed S3 events** | a receipt that fails every retry is dropped silently | S3 → SQS → Lambda with a **dead-letter queue** | ⬜ open |
+| P0-8 | **Vision models are prompt-injectable** | text *inside* a receipt image could try to steer the model | force a strict JSON schema + re-validate every field (partly done: the category allow-list) | 🟡 partial |
 
 ### 🟠 P1 — needed for a real product
 
@@ -143,9 +148,11 @@ Ordered by *what a reviewer would notice first*, not by effort.
 ### ✅ Already production-shaped (don't undersell these)
 
 - **Least-privilege IAM** — one table, one bucket prefix, nothing else.
+- **Separate roles per function** — the API Lambda can't call Bedrock; the OCR Lambda can't touch Cognito or presign URLs.
+- **AI, defensively** — OCR failures degrade to `needs_review`; the model's output is validated against an allow-list, never trusted raw.
 - **Private object storage** — no public objects; 300-second signed URLs only.
 - **Auth at the edge** — bad JWTs are rejected before compute, so attackers are free to reject.
-- **Encryption at rest** (SSE-S3) and **data residency** in the EU.
+- **Encryption at rest** (SSE-S3) and **data residency** in the EU — including the `eu.*` Bedrock inference profile, so receipt images stay in the EU.
 - **Structured data model** with tenant isolation by key design.
 - **Zero idle cost** — the architecture is fundamentally cheap.
 
@@ -173,7 +180,7 @@ most systems is the idle server. We have none.
 
 1. **Request a Lambda concurrency quota increase** (P0-5 — the last open P0) and
    re-run `scripts/loadtest.py --concurrency 40` to prove the fix.
-2. **Add a custom domain + ACM certificate** on top of CloudFront, and an
-   **alarm** on the API Lambda's 5xx/Throttles (P1-1).
+2. **Add an alarm** on the API Lambda's 5xx/Throttles + the OCR Lambda's errors
+   (P1-1), and a **per-user scan quota** so Bedrock spend can't be abused (P0-6).
 3. **Push the repo to GitHub** so the Actions workflow (already committed) runs
    green on every push, and extend it with a `deploy` job.

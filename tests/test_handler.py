@@ -196,6 +196,27 @@ def test_receipt_preview_404_when_no_object(api):
 
 
 # --------------------------------------------------------------------------- #
+# scan (receipt -> pending expense)
+# --------------------------------------------------------------------------- #
+def test_scan_creates_pending_expense_with_upload_url(api):
+    code, body = call(api, "POST", "/expenses/scan")
+    assert code == 201
+    assert "expenseId" in body
+    assert "uploadUrl" in body
+    assert body["receiptKey"] == f"receipts/user-a/{body['expenseId']}"
+
+    # it shows up in the list as pending, with no amount yet
+    _, listing = call(api, "GET", "/expenses")
+    assert listing["count"] == 1
+    assert listing["items"][0]["status"] == "pending"
+
+
+def test_scan_is_scoped_to_caller(api):
+    call(api, "POST", "/expenses/scan", sub="user-a")
+    assert call(api, "GET", "/expenses", sub="user-b")[1]["count"] == 0
+
+
+# --------------------------------------------------------------------------- #
 # router
 # --------------------------------------------------------------------------- #
 def test_unknown_route_is_404(api):

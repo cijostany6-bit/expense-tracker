@@ -5,6 +5,10 @@ Description: >
   logic) -> DynamoDB (data) + S3 (receipts), with the frontend on S3 behind
   CloudFront (HTTPS).
 
+  V3 adds receipt OCR: an S3 ObjectCreated event invokes a second Lambda that
+  reads the receipt with Amazon Bedrock (Nova Lite vision) and fills the expense
+  in — and an optional custom domain (ACM + Route 53) on CloudFront.
+
   Package the Lambda code first, then deploy:
     aws cloudformation package \
       --template-file infra/template.yaml \
@@ -20,6 +24,41 @@ Parameters:
     Type: String
     Default: expense-tracker
     Description: Prefix used for resource names and the Project cost tag.
+
+  DomainName:
+    Type: String
+    Default: ""
+    Description: >
+      Optional custom domain for the web app (e.g. worldofvpc.online). Leave
+      empty to keep the default *.cloudfront.net certificate. Requires
+      AcmCertificateArn (CloudFront only accepts certificates from us-east-1).
+  AcmCertificateArn:
+    Type: String
+    Default: ""
+    Description: >
+      ARN of a validated ACM certificate in us-east-1 covering DomainName
+      (and www.DomainName). Only used when DomainName is set.
+  HostedZoneId:
+    Type: String
+    Default: ""
+    Description: >
+      Optional Route 53 hosted zone id. When set (and a custom domain is used),
+      the stack creates the apex + www alias records pointing at CloudFront.
+
+  # Receipt OCR (V3): vision model used by the OCR function. The `eu.` prefix
+  # keeps inference inside the EU (data-residency principle D1).
+  OcrModelId:
+    Type: String
+    Default: eu.amazon.nova-lite-v1:0
+    Description: Bedrock inference-profile id used to read receipts.
+
+Conditions:
+  UseCustomDomain: !And
+    - !Not [!Equals [!Ref DomainName, ""]]
+    - !Not [!Equals [!Ref AcmCertificateArn, ""]]
+  CreateDnsRecords: !And
+    - !Condition UseCustomDomain
+    - !Not [!Equals [!Ref HostedZoneId, ""]]
 
 Metadata:
   AWS::CloudFormation::Interface:
@@ -58,6 +97,8 @@ Resources:
 
   ReceiptsBucket:
     Type: AWS::S3::Bucket
+    # The notification needs the invoke permission to exist first.
+    DependsOn: OcrInvokePermission
     Properties:
       BucketName: !Sub "${ProjectName}-receipts-${AWS::AccountId}"
       BucketEncryption:
@@ -76,9 +117,96 @@ Resources:
             AllowedOrigins: ["*"]
             ExposedHeaders: [ETag]
             MaxAge: 3000
+      # V3: every receipt upload kicks off the OCR (Bedrock) pipeline.
+      NotificationConfiguration:
+        LambdaConfigurations:
+          - Event: "s3:ObjectCreated:*"
+            Filter:
+              S3Key:
+                Rules:
+                  - Name: prefix
+                    Value: "receipts/"
+            Function: !GetAtt OcrFunction.Arn
       Tags:
         - Key: Project
           Value: !Ref ProjectName
+
+  # ------------------------------------------------------------------------- #
+  # Receipt OCR (V3) — S3 event -> Bedrock vision -> DynamoDB
+  # ------------------------------------------------------------------------- #
+  OcrExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub "${ProjectName}-ocr-role"
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: !Sub "${ProjectName}-ocr-policy"
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Sid: Logs
+                Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource: !Sub "arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:*"
+              - Sid: ReadReceipts
+                Effect: Allow
+                Action: s3:GetObject
+                # Built with Sub (not GetAtt) so this role does not depend on the
+                # bucket, which depends on the notification, which depends on this
+                # function — avoiding a circular reference.
+                Resource: !Sub "arn:${AWS::Partition}:s3:::${ProjectName}-receipts-${AWS::AccountId}/*"
+              - Sid: UpdateExpense
+                Effect: Allow
+                Action:
+                  - dynamodb:UpdateItem
+                  - dynamodb:GetItem
+                Resource: !GetAtt ExpensesTable.Arn
+              - Sid: InvokeBedrock
+                Effect: Allow
+                Action: bedrock:InvokeModel
+                Resource:
+                  - !Sub "arn:${AWS::Partition}:bedrock:*::foundation-model/amazon.nova-lite-v1:0"
+                  - !Sub "arn:${AWS::Partition}:bedrock:*:${AWS::AccountId}:inference-profile/eu.amazon.nova-lite-v1:0"
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+
+  OcrFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub "${ProjectName}-ocr"
+      Runtime: python3.12
+      Handler: ocr.handler
+      Role: !GetAtt OcrExecutionRole.Arn
+      Timeout: 60
+      MemorySize: 256
+      Code: ../backend
+      Environment:
+        Variables:
+          TABLE_NAME: !Ref ExpensesTable
+          BEDROCK_MODEL_ID: !Ref OcrModelId
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+
+  # Allow the receipts bucket to invoke the OCR function.
+  OcrInvokePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref OcrFunction
+      Action: lambda:InvokeFunction
+      Principal: s3.amazonaws.com
+      SourceArn: !Sub "arn:${AWS::Partition}:s3:::${ProjectName}-receipts-${AWS::AccountId}"
+      SourceAccount: !Ref AWS::AccountId
 
   # ------------------------------------------------------------------------- #
   # Frontend hosting (public S3 website, HTTPS via CloudFront below)
@@ -238,7 +366,7 @@ Resources:
           Value: !Ref ProjectName
 
   # ------------------------------------------------------------------------- #
-  # API — one HTTP API, JWT authorizer, 7 routes, all AWS_PROXY to the router
+  # API — one HTTP API, JWT authorizer, 8 routes, all AWS_PROXY to the router
   # ------------------------------------------------------------------------- #
   HttpApi:
     Type: AWS::ApiGatewayV2::Api
@@ -306,6 +434,15 @@ Resources:
     Properties:
       ApiId: !Ref HttpApi
       RouteKey: "POST /expenses"
+      AuthorizationType: JWT
+      AuthorizerId: !Ref JwtAuthorizer
+      Target: !Sub "integrations/${ApiIntegration}"
+
+  RoutePostScan:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref HttpApi
+      RouteKey: "POST /expenses/scan"
       AuthorizationType: JWT
       AuthorizerId: !Ref JwtAuthorizer
       Target: !Sub "integrations/${ApiIntegration}"
@@ -380,8 +517,17 @@ Resources:
           AllowedMethods: [GET, HEAD]
           CachePolicyId: 658327ea-f89d-4fab-a63d-7e88639e58f6  # Managed-CachingOptimized
           Compress: true
-        ViewerCertificate:
-          CloudFrontDefaultCertificate: true
+        Aliases: !If
+          - UseCustomDomain
+          - - !Ref DomainName
+            - !Sub "www.${DomainName}"
+          - !Ref AWS::NoValue
+        ViewerCertificate: !If
+          - UseCustomDomain
+          - AcmCertificateArn: !Ref AcmCertificateArn
+            SslSupportMethod: sni-only
+            MinimumProtocolVersion: TLSv1.2_2021
+          - CloudFrontDefaultCertificate: true
         Restrictions:
           GeoRestriction:
             RestrictionType: none
@@ -389,6 +535,45 @@ Resources:
       Tags:
         - Key: Project
           Value: !Ref ProjectName
+
+  # ------------------------------------------------------------------------- #
+  # DNS — apex + www alias records pointing at CloudFront (optional)
+  # ------------------------------------------------------------------------- #
+  DnsRecordA:
+    Type: AWS::Route53::RecordSet
+    Condition: CreateDnsRecords
+    Properties:
+      HostedZoneId: !Ref HostedZoneId
+      Name: !Ref DomainName
+      Type: A
+      AliasTarget:
+        DNSName: !GetAtt CloudFrontDistribution.DomainName
+        HostedZoneId: Z2FDTNDATAQYW2   # CloudFront's fixed alias hosted-zone id
+        EvaluateTargetHealth: false
+
+  DnsRecordAAAA:
+    Type: AWS::Route53::RecordSet
+    Condition: CreateDnsRecords
+    Properties:
+      HostedZoneId: !Ref HostedZoneId
+      Name: !Ref DomainName
+      Type: AAAA
+      AliasTarget:
+        DNSName: !GetAtt CloudFrontDistribution.DomainName
+        HostedZoneId: Z2FDTNDATAQYW2
+        EvaluateTargetHealth: false
+
+  DnsRecordWww:
+    Type: AWS::Route53::RecordSet
+    Condition: CreateDnsRecords
+    Properties:
+      HostedZoneId: !Ref HostedZoneId
+      Name: !Sub "www.${DomainName}"
+      Type: A
+      AliasTarget:
+        DNSName: !GetAtt CloudFrontDistribution.DomainName
+        HostedZoneId: Z2FDTNDATAQYW2
+        EvaluateTargetHealth: false
 
 Outputs:
   ApiUrl:
@@ -402,6 +587,15 @@ Outputs:
   CloudFrontUrl:
     Description: HTTPS front door to the web app.
     Value: !Sub "https://${CloudFrontDistribution.DomainName}"
+
+  CustomDomainUrl:
+    Condition: UseCustomDomain
+    Description: HTTPS URL of the web app on the custom domain.
+    Value: !Sub "https://${DomainName}"
+
+  OcrFunctionName:
+    Description: Name of the receipt-OCR Lambda (S3-triggered).
+    Value: !Ref OcrFunction
 
   UserPoolId:
     Description: Cognito user pool id.
