@@ -90,7 +90,7 @@ Resources:
       SSESpecification:
         SSEEnabled: true
       PointInTimeRecoverySpecification:
-        PointInTimeRecoveryEnabled: false
+        PointInTimeRecoveryEnabled: true
       Tags:
         - Key: Project
           Value: !Ref ProjectName
@@ -417,6 +417,10 @@ Resources:
       ApiId: !Ref HttpApi
       StageName: $default
       AutoDeploy: true
+      # Edge throttle — caps runaway / abusive traffic (generous for a demo).
+      DefaultRouteSettings:
+        ThrottlingBurstLimit: 200
+        ThrottlingRateLimit: 100
       Tags:
         Project: !Ref ProjectName
 

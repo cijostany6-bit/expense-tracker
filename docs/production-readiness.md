@@ -117,7 +117,7 @@ Ordered by *what a reviewer would notice first*, not by effort.
 | P0-3 | **No automated tests** | a refactor can silently break anything | **pytest + moto** — 36 offline unit tests ([`tests/`](../tests/)) | ✅ done |
 | P0-4 | **No CI/CD** | deploys are manual `aws` commands run from one laptop | **GitHub Actions**: install deps → run tests on every push | ✅ CI done (deploy CD deferred) |
 | P0-5 | **Lambda concurrency limit = 10** | load testing proved we 503 under modest traffic | request a quota increase (free) + set **reserved concurrency** deliberately | ⬜ open (AWS support ticket) |
-| P0-6 | **OCR has no per-user rate limit** | a user could spam scans → Bedrock spend | per-user quota (a DynamoDB counter) + API Gateway throttling | ⬜ open |
+| P0-6 | **OCR has no per-user rate limit** | a user could spam scans → Bedrock spend | per-user quota (a DynamoDB counter); API Gateway stage throttle ✅ applied | 🟡 partial |
 | P0-7 | **No DLQ for failed S3 events** | a receipt that fails every retry is dropped silently | S3 → SQS → Lambda with a **dead-letter queue** | ⬜ open |
 | P0-8 | **Vision models are prompt-injectable** | text *inside* a receipt image could try to steer the model | force a strict JSON schema + re-validate every field (partly done: the category allow-list) | 🟡 partial |
 
@@ -127,10 +127,10 @@ Ordered by *what a reviewer would notice first*, not by effort.
 |---|---|---|---|
 | P1-1 | **No monitoring/alarms** | you'd find out about outages from users | CloudWatch **alarms** on 5xx, Throttles, p99 → SNS/email; **X-Ray** tracing |
 | P1-2 | **No request validation** on the API | junk reaches Lambda and burns money | API Gateway / Lambda schema validation + payload size limits |
-| P1-3 | **No rate limiting / WAF** | one script can hammer the API | AWS **WAF** rate-based rules, API Gateway throttling, or usage plans |
+| P1-3 | **No rate limiting / WAF** | one script can hammer the API | 🟡 **partial** — API Gateway stage throttle applied (100 rps / 200 burst); WAF still open |
 | P1-4 | **No account recovery / MFA** | users can't reset a forgotten password | Cognito **forgot-password** flow, optional TOTP MFA |
 | P1-5 | **Token refresh not implemented** | sessions die after ~1 h | use the **RefreshToken** (`REFRESH_TOKEN_AUTH`) silently |
-| P1-6 | **No backups / PITR** | one bad delete = data gone | DynamoDB **point-in-time recovery**; S3 **versioning** |
+| P1-6 | **No backups / PITR** | one bad delete = data gone | 🟡 **partial** — DynamoDB PITR enabled; S3 versioning still open |
 | P1-7 | **Single region** | a regional outage = downtime | multi-region (DynamoDB global tables + CloudFront), or at least documented RTO/RPO |
 | P1-8 | **No cost guardrails at app level** | abuse grows the bill | per-user quotas, AWS Budgets + anomalies (we already have 2 budgets) |
 
@@ -180,7 +180,8 @@ most systems is the idle server. We have none.
 
 1. **Request a Lambda concurrency quota increase** (P0-5 — the last open P0) and
    re-run `scripts/loadtest.py --concurrency 40` to prove the fix.
-2. **Add an alarm** on the API Lambda's 5xx/Throttles + the OCR Lambda's errors
-   (P1-1), and a **per-user scan quota** so Bedrock spend can't be abused (P0-6).
-3. **Push the repo to GitHub** so the Actions workflow (already committed) runs
-   green on every push, and extend it with a `deploy` job.
+2. **Add CloudWatch alarms** on the API Lambda's 5xx/Throttles and the OCR
+   Lambda's errors (P1-1), and a **per-user scan quota** so Bedrock spend can't be
+   abused (P0-6). *(API Gateway throttling is already applied — see P1-3.)*
+3. **Add a `deploy` job to CI** (OIDC, no long-lived keys) so a green build ships
+   itself, and turn on **S3 versioning** for the receipts bucket (P1-6).
