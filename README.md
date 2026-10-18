@@ -1,9 +1,18 @@
 # Expense Tracker ☁️
 
+[![CI](https://github.com/cijostany6-bit/expense-tracker/actions/workflows/ci.yml/badge.svg)](https://github.com/cijostany6-bit/expense-tracker/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+![Tests](https://img.shields.io/badge/tests-36%20passing-brightgreen)
+![Region](https://img.shields.io/badge/region-eu--central--1-blue)
+![Cloud](https://img.shields.io/badge/AWS-serverless-FF9900?logo=amazonaws&logoColor=white)
+![a11y](https://img.shields.io/badge/a11y-100-brightgreen)
+
 A **serverless, multi-user expense tracker on AWS** — sign up, log expenses,
 upload receipts, and see a spend summary. Built *and understood* service by
 service: every step has a diagram, the decisions behind it, and drills to go
 deeper.
+
+![Expense Tracker — live dashboard](docs/img/app-dashboard.png)
 
 > **Status:** ✅ **Portfolio-complete** (2026-10-16) · **V3 — receipt OCR + custom domain** (2026-10-17) · **Region:** `eu-central-1` (Frankfurt)
 > **Stack:** Cognito · API Gateway · Lambda · DynamoDB · S3 · CloudFront · **Bedrock** · **Route 53** · **ACM** · IAM · CloudWatch
@@ -23,6 +32,21 @@ deeper.
 | **📄 Whole guide as a PDF** (87 pages, ~3 MB) | https://worldofvpc.online/learn/expense-tracker-guide.pdf |
 | API | https://4haajttqgh.execute-api.eu-central-1.amazonaws.com |
 | Demo user | `demo.cijo@example.com` / `Testpass1` |
+
+> **Try it:** open https://worldofvpc.online, sign in with the demo account above (or create your own), add a few expenses — or hit **📷 Scan a receipt** and upload a photo of any bill.
+
+---
+
+## ⭐ Why this project stands out
+
+- **End-to-end serverless on AWS** — Cognito → API Gateway (HTTP + JWT authorizer) → Lambda → DynamoDB → S3, fronted by CloudFront on a custom HTTPS domain (Route 53 + ACM).
+- **AI receipt scanning** — upload a photo; a **Bedrock (Nova Lite) vision** Lambda reads it and fills in vendor, date, total and category. It runs *event-driven off S3*, so a slow AI call never blocks the user's request.
+- **Multi-tenant & secure by construction** — every item is keyed by the JWT `sub`, so a user can only ever read/write their own data; receipts live in a private bucket reachable only through short-lived presigned URLs; both Lambdas run under least-privilege IAM roles.
+- **EU data residency** — region `eu-central-1` plus Bedrock's **EU inference profile**, for GDPR-minded workloads.
+- **Reproducible** — the whole stack is a single CloudFormation template; the deploy and the PDF build are scripted.
+- **Tested & CI'd** — 36 offline tests (pytest + moto) run on every push via GitHub Actions — no live AWS required.
+- **Cost-engineered** — runs inside the AWS Free Tier; the only standing cost is a **$0.50/month** Route 53 hosted zone.
+- **Documented to teach** — 15 docs, an interactive course and an 87-page PDF explain *why* each service was chosen, not just what it does.
 
 ---
 
@@ -112,6 +136,30 @@ deeper.
 - [x] **CI** — [`.github/workflows/ci.yml`](.github/workflows/ci.yml)
 - [x] Least-privilege IAM, encryption at rest, EU data residency
 - [x] Real load test + security test with written findings
+
+## 📈 Quality (measured on the live site)
+
+| Check | Result |
+|---|---|
+| **Lighthouse — Accessibility** | **100** |
+| **Lighthouse — Best Practices** | **100** |
+| **Lighthouse — SEO** | **100** |
+| Unit tests | **36 passing** (pytest + moto, fully offline) |
+| CI | green on every push (GitHub Actions) |
+
+Reproduce with Chrome DevTools → *Lighthouse* on https://worldofvpc.online.
+
+## 🎓 Learn it yourself — docs · course · PDF
+
+The repo is also a **teaching artifact**: it doesn't just show *what* was built, it explains *why* each choice was made and *what we'd change*.
+
+- **Learning site** → https://worldofvpc.online/learn/ — renders the `docs/` markdown in the browser (15 docs).
+- **Interactive course** → https://worldofvpc.online/learn/course/ — 18 modules, each with an animated diagram and 10–15 hard quiz questions; progress is saved locally.
+- **📄 One PDF for offline reading** → https://worldofvpc.online/learn/expense-tracker-guide.pdf (87 pages, ~3 MB).
+
+| Interactive course | Learning site |
+|---|---|
+| [![Course module](docs/img/course-module.png)](https://worldofvpc.online/learn/course/) | [![Learning site](docs/img/learn-site.png)](https://worldofvpc.online/learn/) |
 
 ## 🔌 API (all routes require a valid JWT)
 
@@ -352,3 +400,7 @@ aws cloudfront get-distribution-config --id E2CBQ3WW5YO2WF > /tmp/cf.json
 
 Budgets/targets · Cognito groups for RBAC · monitoring alarms & X-Ray · rate
 limiting / WAF · a `deploy` job in CI · push/WebSocket instead of polling.
+
+## 📜 License
+
+[MIT](LICENSE) © 2026 Cijo Stany John — use it, learn from it, build your own.

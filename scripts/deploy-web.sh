@@ -35,6 +35,14 @@ done
 aws s3 cp "$ROOT/README.md" "s3://$BUCKET/learn/content/readme.md" \
   --cache-control "public,max-age=300"
 
+# README screenshots — the learning site renders README.md at /learn/, so its
+# relative image paths (docs/img/…) must exist under /learn/docs/img/.
+if [ -d "$ROOT/docs/img" ]; then
+  echo "▶ deploying docs/img -> s3://$BUCKET/learn/docs/img/"
+  aws s3 sync "$ROOT/docs/img/" "s3://$BUCKET/learn/docs/img/" \
+    --exclude "*.DS_Store" --cache-control "public,max-age=86400"
+fi
+
 # the generated single-file PDF (built by scripts/build-pdf.sh), if present
 PDF="$ROOT/dist/expense-tracker-guide.pdf"
 if [ -f "$PDF" ]; then

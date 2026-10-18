@@ -4,6 +4,8 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>Expense Tracker — how it was built, service by service</title>
+<meta name="description" content="How this serverless AWS Expense Tracker was built, service by service — deep-dives into Cognito, API Gateway, Lambda, DynamoDB, S3, CloudFront and Bedrock, with diagrams, key decisions, drills and an interactive course." />
+<meta name="theme-color" content="#0b1020" />
 <link rel="stylesheet" href="site.css" />
 <script src="https://cdn.jsdelivr.net/npm/marked@15/marked.min.js" defer></script>
 </head>
@@ -52,6 +54,19 @@ const DOCS = [
 const slug = f => f.replace(/\.md$/, "");
 const esc  = s => String(s).replace(/[&<>]/g, c => ({ "&":"&amp;", "<":"&lt;", ">":"&gt;" }[c]));
 
+/* marked renders GFM task-list "- [x]" items as real (disabled) form controls.
+   They carry no label, so a11y audits flag them — swap them for aria-hidden
+   glyphs, which also look nicer in a reading view. */
+function tidyTaskBoxes(root) {
+  root.querySelectorAll('input[type="checkbox"]').forEach(cb => {
+    const s = document.createElement("span");
+    s.className = "taskbox";
+    s.setAttribute("aria-hidden", "true");
+    s.textContent = cb.checked ? "☑" : "☐";
+    cb.replaceWith(s);
+  });
+}
+
 function buildNav() {
   document.getElementById("nav").innerHTML = DOCS.map(g => `
     <div class="group">
@@ -78,6 +93,7 @@ async function load() {
 
     if (window.marked && typeof window.marked.parse === "function") {
       el.innerHTML = window.marked.parse(md);
+      tidyTaskBoxes(el);
     } else {
       // CDN blocked / offline → still usable, just plain text
       el.innerHTML = "<pre class='raw'>" + esc(md) + "</pre>";
